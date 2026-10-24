@@ -1,8 +1,9 @@
 # Plan de Trabajo y Organización del Equipo (4 Integrantes)
 ### Trabajo Práctico Integrador — Backend de Aplicaciones 2026 (UTN FRC)
 
-> [!TIP] Centro de Estudio Teórico para el Tech Lead y Defensa Oral
-> Consultá el índice maestro y las notas atómicas de estudio en: [[00 - Mapa de Estudio y Guía Tech Lead]]
+> [!TIP] Centro de Estudio Teórico y Tareas del Tech Lead
+> - Consultá el índice maestro y las notas atómicas de estudio en: [[00 - Mapa de Estudio y Guía Tech Lead]]
+> - Consultá tu checklist personal de implementación en: [[TareasTechLead]]
 
 ---
 
@@ -316,6 +317,38 @@ Si al hacer `git merge develop` la consola arroja:
    git commit -m "chore: resolver conflicto de merge con develop"
    git push origin feature/mi-rama
    ```
+
+---
+
+### 4.8. Guía de Buenas Prácticas de Logging (Registro de Eventos)
+
+Para mantener una observabilidad profesional y consistente en todos los microservicios sin ensuciar la salida ni gastar memoria innecesaria, todos los desarrolladores deben respetar las siguientes pautas:
+
+#### 1. Prohibido `System.out.println()` y `e.printStackTrace()`
+* Todo registro de actividad se realiza mediante la fachada **SLF4J**.
+* En cualquier `@Service`, `@RestController` o componente, agregar la anotación de Lombok **`@Slf4j`** arriba de la clase. Esto provee automáticamente la variable de instancia `log`.
+
+#### 2. Criterio para la Elección de Niveles de Log
+* **`log.info(...)` (Hitos de Negocio Exitosos):** Registrar cuando una operación importante se completó.
+  * *Ejemplo:* `log.info("Propiedad creada exitosamente con ID: {}", nuevaPropiedad.getId());`
+  * *Ejemplo:* `log.info("Contrato ID: {} pasó de SENIADO a ACTIVO", contrato.getId());`
+* **`log.debug(...)` (Detalle Técnico para Desarrollo):** Registrar llamadas intermedias o parámetros para facilitar la depuración.
+  * *Ejemplo:* `log.debug("Consultando API GeoRef para normalizar dirección: {}", direccionRaw);`
+* **`log.warn(...)` (Contingencias y Fallbacks Recuperables):** Situaciones no ideales que el sistema pudo sortear sin romperse.
+  * *Ejemplo:* `log.warn("API de BCRA no respondió a tiempo. Utilizando caché local de contingencia ICL para fecha: {}", fecha);`
+* **`log.error(...)` (Fallos Críticos y Excepciones):** Errores que interrumpen la transacción.
+  * *Ejemplo:* `log.error("Error al persistir contrato sobre propiedad ID: {}", propiedadId, ex);`
+
+#### 3. Interpolar Variables con `{}` (Nunca concatenar con `+`)
+* ❌ **Mal:** `log.info("Contrato " + id + " activado con monto " + monto);` *(Consume memoria RAM creando objetos String intermedios aunque el log esté desactivado).*
+* ✅ **Bien:** `log.info("Contrato ID: {} activado con monto: {}", id, monto);` *(SLF4J solo interpola si el nivel de log está activo).*
+
+#### 4. En Errores, pasar SIEMPRE el objeto de excepción al final
+* ❌ **Mal:** `log.error("Falló la operación: " + ex.getMessage());` *(Oculta la causa raíz y la línea de código donde ocurrió).*
+* ✅ **Bien:** `log.error("Fallo inesperado al activar el contrato ID: {}", id, ex);` *(SLF4J imprime el mensaje limpio y vuelca el stack trace completo con su causa original).*
+
+#### 5. El `X-Correlation-ID` es Automático
+* Ningún desarrollador necesita imprimir a mano el ID de la petición. El filtro transversal `CorrelationIdFilter` ya lo inyecta en el MDC y Logback lo estampa automáticamente en cada línea con el formato `[req-uuid]`.
 
 ---
 
