@@ -1,6 +1,9 @@
 # Plan de Trabajo y Organización del Equipo (4 Integrantes)
 ### Trabajo Práctico Integrador — Backend de Aplicaciones 2026 (UTN FRC)
 
+> [!TIP] Centro de Estudio Teórico para el Tech Lead y Defensa Oral
+> Consultá el índice maestro y las notas atómicas de estudio en: [[00 - Mapa de Estudio y Guía Tech Lead]]
+
 ---
 
 ## 1. Principio Rector del Equipo

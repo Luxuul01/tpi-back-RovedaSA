@@ -153,9 +153,12 @@ package "ms-contratos" {
         + activar(): void
         + cancelar(motivo: String): void
         + aplicarAjuste(fechaAjuste: LocalDate, indiceDesde: BigDecimal, indiceHasta: BigDecimal): Ajuste
+        + generarCuotasPeriodoInicial(): List<Cuota>
+        + generarCuotasAjuste(ajuste: Ajuste): List<Cuota>
+        + anularCuotasFuturas(fechaCorte: LocalDate): void
         + rescindir(fechaRescision: LocalDate): BigDecimal
         + finalizar(): void
-        + calcularMora(diasAtraso: Integer): BigDecimal
+        + calcularMora(cuotaId: Long, fechaReferencia: LocalDate): BigDecimal
         + setEstado(nuevoEstado: EstadoContrato): void
     }
 
@@ -171,6 +174,25 @@ package "ms-contratos" {
         - porcentajeVariacion: BigDecimal
     }
 
+    enum EstadoCuotaEnum <<enum>> {
+        PENDIENTE
+        ANULADA
+    }
+
+    class Cuota {
+        - id: Long
+        - nroCuota: Integer
+        - periodoMes: Integer
+        - periodoAnio: Integer
+        - fechaVencimiento: LocalDate
+        - montoBase: BigDecimal
+        - estado: EstadoCuotaEnum
+        + calcularMora(fechaReferencia: LocalDate, porcentajeDiario: BigDecimal): BigDecimal
+        + calcularTotalConMora(fechaReferencia: LocalDate, porcentajeDiario: BigDecimal): BigDecimal
+        + estaVencida(fechaReferencia: LocalDate): Boolean
+        + anular(): void
+    }
+
     class IndiceIclCache {
         - id: Long
         - fecha: LocalDate
@@ -179,6 +201,8 @@ package "ms-contratos" {
     }
 
     Contrato *--> "0..*" Ajuste : ajustes
+    Contrato *--> "0..*" Cuota : cuotas (generadas bajo demanda)
+    Cuota --> EstadoCuotaEnum : estado
     Contrato --> EstadoContratoEnum : estadoEnum
     Contrato o--> "1" EstadoContrato : estadoActual
     Contrato ..> IndiceIclCache : "consulta de contingencia"
@@ -354,7 +378,7 @@ state Señado {
     Señado : **Prohibido:** seniar(), aplicarAjuste(), calcularMora(), rescindir(), finalizar()
 }
 
-Señado --> Activo : activar()\n[Garante solvente BCRA && Saldo integrado && dentro de plazo]\n/ notificarCatálogo(Propiedad -> ALQUILADA),\ncancelarOtrosBorradores(propiedadId)
+Señado --> Activo : activar()\n[Garante solvente BCRA && Saldo integrado && dentro de plazo]\n/ notificarCatálogo(Propiedad -> ALQUILADA),\ncancelarOtrosBorradores(propiedadId),\ngenerarCuotasIniciales(periodo1)
 
 Señado --> Cancelado : cancelarSeña(motivo)\n[Desistimiento, plazo vencido o garantías rechazadas]\n/ notificarCatálogo(Propiedad -> DISPONIBLE),\nliquidarRetencionSeña()
 
@@ -363,12 +387,12 @@ state Activo {
     Activo : **Permitido:** aplicarAjuste(), calcularMora(), rescindir(), finalizar()
     Activo : **Prohibido:** seniar(), activar(), cancelar()
 
-    Activo --> Activo : aplicarAjuste(fechaAjuste)\n[mesesTranscurridos >= frecuenciaMeses]\n/ obtenerVariacionIclBcra(), registrarAjuste(), actualizarCanon()
+    Activo --> Activo : aplicarAjuste(fechaAjuste)\n[mesesTranscurridos >= frecuenciaMeses]\n/ obtenerVariacionIclBcra(), registrarAjuste(),\nactualizarCanon(), generarCuotasNuevoPeriodo()
 
-    Activo --> Activo : calcularMora(diasAtraso)\n[fechaPago > diaVencimientoMes]\n/ calcularInteresPunitorio()
+    Activo --> Activo : calcularMora(cuota, fechaRef)\n[fechaRef > fechaVencimientoCuota]\n/ calcularInteresPunitorioDinamico()
 }
 
-Activo --> Rescindido : rescindir(fechaRescision)\n[Interrupción anticipada de contrato vigente]\n/ liquidarPenalizacion(), notificarCatálogo(Propiedad -> DISPONIBLE)
+Activo --> Rescindido : rescindir(fechaRescision)\n[Interrupción anticipada de contrato vigente]\n/ liquidarPenalizacion(), anularCuotasFuturasPendientes(),\nnotificarCatálogo(Propiedad -> DISPONIBLE)
 
 Activo --> Finalizado : finalizar(fechaFin)\n[fechaActual >= fechaFin]\n/ notificarCatálogo(Propiedad -> DISPONIBLE)
 
