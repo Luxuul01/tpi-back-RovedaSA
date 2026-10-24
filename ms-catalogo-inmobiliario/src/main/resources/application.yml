@@ -23,7 +23,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://localhost:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+          jwk-set-uri: http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/certs
 
 # Integracion externa GeoRef AR
 georef:
