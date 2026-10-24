@@ -1,4 +1,4 @@
-# TPI Backend — Alquileres Roveda SA
+﻿# TPI Backend — Alquileres Roveda SA
 
 Sistema Backend de Administración de Alquileres Inmobiliarios basado en microservicios, desarrollado para el **Trabajo Práctico Integrador 2026** (Backend de Aplicaciones / Diseño de Sistemas de Información — UTN FRC).
 
@@ -11,7 +11,6 @@ Toda la documentación teórica, de negocio, diseño y organización del equipo 
 * 📄 **[Especificación del Dominio y Reglas de Negocio](./docs/Dominio.md)**: Descripción detallada del problema, servicios, bases de datos por servicio, APIs externas, roles de acceso (aislamiento estricto para Inquilinos y Propietarios), Casos de Uso (DSI) y Requerimientos No Funcionales (ISO 25010).
 * 📐 **[Diagramas de Arquitectura y Máquina de Estados](./docs/Diagramas.md)**: Código PlantUML interactivo del Diagrama de Clases del Dominio, Contexto C1, Contenedores C2 y la Máquina de Estados del Contrato (`Creado` $\rightarrow$ `Señado` $\rightarrow$ `Activo` $\rightarrow$ `Cancelado` / `Rescindido` / `Finalizado`).
 * 👥 **[Plan de Trabajo y Flujos de GitHub](./docs/PlanDeTrabajo.md)**: Matriz de responsabilidades de los 4 integrantes, temas de defensa oral, pautas de trabajo en Git (ramas, Commons First, PRs con Squash) y guía de resolución de emergencias.
-* 🏛️ **[Modelo UML en Rational Software Architect (RSA)](./docs/rsa/Blank%20Package.emx)**: Archivo `.emx` para abrir y editar los diagramas nativamente en IBM Rational Software Architect.
 
 ---
 
