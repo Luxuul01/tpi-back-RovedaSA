@@ -1,0 +1,88 @@
+{
+  "realm": "rovedasa-realm",
+  "enabled": true,
+  "displayName": "Alquileres Roveda SA",
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMINISTRADOR",
+        "description": "Acceso total de lectura y escritura"
+      },
+      {
+        "name": "PROPIETARIO",
+        "description": "Solo lectura sobre sus inmuebles y contratos asociados"
+      },
+      {
+        "name": "INQUILINO",
+        "description": "Solo lectura sobre sus contratos de alquiler vigentes"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "rovedasa-backend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@rovedasa.com",
+      "firstName": "Admin",
+      "lastName": "Roveda",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMINISTRADOR"
+      ]
+    },
+    {
+      "username": "propietario1",
+      "enabled": true,
+      "email": "propietario1@gmail.com",
+      "firstName": "Carlos",
+      "lastName": "Propietario",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "prop123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "PROPIETARIO"
+      ]
+    },
+    {
+      "username": "inquilino1",
+      "enabled": true,
+      "email": "inquilino1@gmail.com",
+      "firstName": "Ana",
+      "lastName": "Inquilina",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "inq123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "INQUILINO"
+      ]
+    }
+  ]
+}

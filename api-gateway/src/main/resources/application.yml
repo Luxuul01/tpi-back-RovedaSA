@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # Rutas hacia ms-catalogo-inmobiliario
+        - id: catalogo-service-propiedades
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/propiedades/**
+          filters:
+            - TokenRelay=
+
+        - id: catalogo-service-personas
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/personas/**
+          filters:
+            - TokenRelay=
+
+        # Rutas hacia ms-contratos
+        - id: contratos-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/contratos/**
+          filters:
+            - TokenRelay=
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: DEBUG

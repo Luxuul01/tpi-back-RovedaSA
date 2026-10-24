@@ -1,0 +1,40 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ms-contratos
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/contratos_db
+    username: postgres
+    password: postgrespassword
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+
+# Comunicacion inter-servicio con ms-catalogo-inmobiliario
+catalogo:
+  service:
+    base-url: http://localhost:8081/api
+
+# Integracion externa BCRA
+bcra:
+  api:
+    base-url: https://api.bcra.gob.ar
+
+logging:
+  level:
+    com.rovedasa.contratos: DEBUG

@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: ms-catalogo-inmobiliario
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/catalogo_db
+    username: postgres
+    password: postgrespassword
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+
+# Integracion externa GeoRef AR
+georef:
+  api:
+    base-url: https://apis.datos.gob.ar/georef/api
+
+logging:
+  level:
+    com.rovedasa.catalogo: DEBUG

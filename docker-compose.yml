@@ -1,0 +1,63 @@
+services:
+  db-catalogo:
+    image: postgres:16-alpine
+    container_name: tpi-db-catalogo
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: catalogo_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_catalogo:/var/lib/postgresql/data
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d catalogo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db-contratos:
+    image: postgres:16-alpine
+    container_name: tpi-db-contratos
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: contratos_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_contratos:/var/lib/postgresql/data
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d contratos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: tpi-keycloak
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command: start-dev --import-realm
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    networks:
+      - tpi-network
+
+volumes:
+  pgdata_catalogo:
+  pgdata_contratos:
+
+networks:
+  tpi-network:
+    driver: bridge
