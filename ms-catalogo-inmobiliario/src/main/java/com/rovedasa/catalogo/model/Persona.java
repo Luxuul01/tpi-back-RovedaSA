@@ -18,6 +18,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -61,7 +62,9 @@ public class Persona {
     @Setter
     private String telefono;
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    // LAZY + BatchSize: al recorrer varias personas, los roles se cargan en lotes de 50 y no de a una
+    @ElementCollection(fetch = FetchType.LAZY)
+    @BatchSize(size = 50)
     @CollectionTable(name = "persona_roles", joinColumns = @JoinColumn(name = "persona_id"))
     @Enumerated(EnumType.STRING)
     @Column(name = "rol", nullable = false, length = 20)
