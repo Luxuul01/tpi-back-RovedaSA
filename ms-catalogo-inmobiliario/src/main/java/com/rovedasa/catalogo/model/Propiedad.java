@@ -87,14 +87,15 @@ public class Propiedad {
 
     private Double longitud;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    // Nombres explícitos: la estrategia por defecto pega el número ("superficie_totalm2")
+    @Column(name = "superficie_total_m2", nullable = false, precision = 10, scale = 2)
     private BigDecimal superficieTotalM2;
 
-    @Column(precision = 10, scale = 2)
+    @Column(name = "superficie_cubierta_m2", precision = 10, scale = 2)
     private BigDecimal superficieCubiertaM2;
 
     // Resultado de la tasación (ver aplicarTasacion)
-    @Column(precision = 15, scale = 2)
+    @Column(name = "precio_sugerido_m2", precision = 15, scale = 2)
     private BigDecimal precioSugeridoM2;
 
     @Column(precision = 15, scale = 2)

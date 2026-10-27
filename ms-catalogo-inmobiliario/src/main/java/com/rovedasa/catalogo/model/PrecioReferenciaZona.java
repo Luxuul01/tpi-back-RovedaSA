@@ -62,7 +62,7 @@ public class PrecioReferenciaZona {
 
     // ARS por m² por mes
     @Setter
-    @Column(nullable = false, precision = 15, scale = 2)
+    @Column(name = "valor_m2", nullable = false, precision = 15, scale = 2)
     private BigDecimal valorM2;
 
     // De 1 a 10, es el "puntaje de zona" del CU-01
