@@ -47,6 +47,7 @@ public class SecurityConfig {
                     .sessionManagement(sesion -> sesion.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                     .authorizeHttpRequests(autorizacion -> autorizacion
                             .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                            .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                             .anyRequest().authenticated())
                     .oauth2ResourceServer(oauth2 -> oauth2
                             .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakRolesConverter())))
