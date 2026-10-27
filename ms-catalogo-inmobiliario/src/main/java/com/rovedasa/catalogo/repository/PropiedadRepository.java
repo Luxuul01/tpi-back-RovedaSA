@@ -2,6 +2,8 @@ package com.rovedasa.catalogo.repository;
 
 import com.rovedasa.catalogo.model.Propiedad;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,8 +13,18 @@ import java.util.Optional;
 /**
  * Los graphs solo incluyen relaciones ToOne: una colección dentro del graph obliga a Hibernate
  * a paginar en memoria (HHH90003004). Los roles de las personas se cargan aparte, en lotes (@BatchSize).
+ * Propietario y zona son los datos que muestra PropiedadResponse; inquilino y garante solo aportan su id,
+ * que se obtiene del proxy sin consultar la base.
  */
 public interface PropiedadRepository extends JpaRepository<Propiedad, Long> {
+
+    @Override
+    @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
+    Optional<Propiedad> findById(Long id);
+
+    @Override
+    @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
+    Page<Propiedad> findAll(Pageable pageable);
 
     // Detalle de una propiedad: trae las tres personas vinculadas en una sola consulta
     @EntityGraph(attributePaths = {"propietario", "inquilino", "garante"})
@@ -22,8 +34,11 @@ public interface PropiedadRepository extends JpaRepository<Propiedad, Long> {
     @EntityGraph(attributePaths = {"propietario"})
     List<Propiedad> findByEstado(EstadoPropiedadEnum estado);
 
+    @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
+    Page<Propiedad> findByEstado(EstadoPropiedadEnum estado, Pageable pageable);
+
     // Filtro de seguridad del rol PROPIETARIO (CU-08): la identidad sale del claim sub del JWT
-    @EntityGraph(attributePaths = {"propietario"})
+    @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
     List<Propiedad> findByPropietario_KeycloakUserId(String keycloakUserId);
 
     @EntityGraph(attributePaths = {"propietario"})

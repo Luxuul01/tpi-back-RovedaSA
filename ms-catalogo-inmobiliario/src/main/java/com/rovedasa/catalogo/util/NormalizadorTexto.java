@@ -23,4 +23,15 @@ public final class NormalizadorTexto {
         String descompuesto = Normalizer.normalize(texto.trim(), Normalizer.Form.NFD);
         return MARCAS_DIACRITICAS.matcher(descompuesto).replaceAll("").toLowerCase(Locale.ROOT);
     }
+
+    /**
+     * Para campos opcionales: recorta espacios y convierte el texto vacío en null.
+     * Evita guardar "" en columnas únicas (dos "" chocarían; dos null no).
+     */
+    public static String limpiarOpcional(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return null;
+        }
+        return texto.trim();
+    }
 }
