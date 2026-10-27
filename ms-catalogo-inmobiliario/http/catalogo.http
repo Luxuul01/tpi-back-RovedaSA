@@ -1,0 +1,252 @@
+### =====================================================================
+### ms-catalogo-inmobiliario — flujo manual (extensión REST Client de VS Code)
+### Levantar con perfil local (sin seguridad):
+###   .\mvnw.cmd -pl ms-catalogo-inmobiliario spring-boot:run "-Dspring-boot.run.profiles=local"
+### Ejecutar los requests en orden: los ids se encadenan con las variables de abajo.
+### Pensado para una base recién creada (los CUIT se repetirían en una segunda corrida).
+### =====================================================================
+
+@baseUrl = http://localhost:8081
+@propietarioId = {{crearPropietario.response.body.$.id}}
+@inquilinoId = {{crearInquilino.response.body.$.id}}
+@garanteId = {{crearGarante.response.body.$.id}}
+@propiedadId = {{crearPropiedadNuevaCordoba.response.body.$.id}}
+
+### 1. Crear propietario (CUIT 20-12345678-6, válido) -> 201
+# @name crearPropietario
+POST {{baseUrl}}/api/personas
+Content-Type: application/json
+
+{
+  "cuitCuil": "20-12345678-6",
+  "nombre": "Juan",
+  "apellido": "Pérez",
+  "email": "juan.perez@mail.com",
+  "telefono": "3515550001",
+  "keycloakUserId": "kc-propietario-1",
+  "roles": ["PROPIETARIO"]
+}
+
+### 2. Crear inquilino (CUIL 27-12345678-0, válido) -> 201
+# @name crearInquilino
+POST {{baseUrl}}/api/personas
+Content-Type: application/json
+
+{
+  "cuitCuil": "27-12345678-0",
+  "nombre": "Lucía",
+  "apellido": "Gómez",
+  "email": "lucia.gomez@mail.com",
+  "keycloakUserId": "kc-inquilino-1",
+  "roles": ["INQUILINO"],
+  "ingresosMensualesDeclarados": 950000
+}
+
+### 3. Crear garante (CUIL 20-12345670-0, válido; sin usuario de Keycloak) -> 201
+# @name crearGarante
+POST {{baseUrl}}/api/personas
+Content-Type: application/json
+
+{
+  "cuitCuil": "20-12345670-0",
+  "nombre": "Marcos",
+  "apellido": "Díaz",
+  "roles": ["GARANTE"],
+  "ingresosMensualesDeclarados": 2500000
+}
+
+### 4. Propiedad en Independencia 900: cae en Nueva Córdoba (~282 m) y en Güemes (~633 m); gana Nueva Córdoba -> 201
+# DEPARTAMENTO, 55 m² totales y 50 cubiertos -> 52,50 m² computables
+# @name crearPropiedadNuevaCordoba
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "900",
+  "piso": "3",
+  "departamento": "B",
+  "barrio": "Nueva Córdoba",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 55,
+  "superficieCubiertaM2": 50,
+  "propietarioId": {{propietarioId}}
+}
+
+### 5. Propiedad en Gauss 5800 (Villa Belgrano): fuera de todas las zonas -> valor por defecto de la ciudad -> 201
+# CASA, 120 m² totales y 90 cubiertos -> 105,00 m² computables
+# @name crearPropiedadVillaBelgrano
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "CASA",
+  "calle": "Gauss",
+  "numero": "5800",
+  "barrio": "Villa Belgrano",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 120,
+  "superficieCubiertaM2": 90,
+  "propietarioId": {{propietarioId}}
+}
+
+### 6. Obtener la propiedad por id -> 200
+GET {{baseUrl}}/api/propiedades/{{propiedadId}}
+
+### 7a. Listado paginado -> 200
+GET {{baseUrl}}/api/propiedades?page=0&size=10&sort=id,desc
+
+### 7b. Listado filtrado por estado -> 200
+GET {{baseUrl}}/api/propiedades?estado=DISPONIBLE
+
+### 8. Reservar con inquilino y garante -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Content-Type: application/json
+
+{
+  "nuevoEstado": "RESERVADA",
+  "inquilinoId": {{inquilinoId}},
+  "garanteId": {{garanteId}}
+}
+
+### 9. Alquilar -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Content-Type: application/json
+
+{
+  "nuevoEstado": "ALQUILADA"
+}
+
+### 10. Liberar (vuelve a DISPONIBLE y desvincula inquilino y garante) -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Content-Type: application/json
+
+{
+  "nuevoEstado": "DISPONIBLE"
+}
+
+### 11. Agregarle el rol GARANTE al propietario (repetirlo es idempotente) -> 200
+PATCH {{baseUrl}}/api/personas/{{propietarioId}}/roles
+Content-Type: application/json
+
+{
+  "rol": "GARANTE"
+}
+
+### 12. Listar personas con rol GARANTE -> 200
+GET {{baseUrl}}/api/personas?rol=GARANTE
+
+
+### =====================================================================
+### Casos de error
+### =====================================================================
+
+### E1. CUIT con dígito verificador inválido (el correcto es 6) -> 400
+POST {{baseUrl}}/api/personas
+Content-Type: application/json
+
+{
+  "cuitCuil": "20-12345678-7",
+  "nombre": "Error",
+  "apellido": "Cuit",
+  "roles": ["GARANTE"]
+}
+
+### E2. CUIT duplicado (el del propietario) -> 409
+POST {{baseUrl}}/api/personas
+Content-Type: application/json
+
+{
+  "cuitCuil": "20123456786",
+  "nombre": "Otro",
+  "apellido": "Pérez",
+  "roles": ["INQUILINO"]
+}
+
+### E3. Dirección que GeoRef no encuentra (la calle figura como "OSPO TREJO Y SANABRIA") -> 400
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Obispo Trejo",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 40,
+  "propietarioId": {{propietarioId}}
+}
+
+### E4. Ciudad "Córdoba Capital" (no es el nombre oficial de la localidad) -> 400 con mensaje orientativo
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "900",
+  "ciudad": "Córdoba Capital",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 40,
+  "propietarioId": {{propietarioId}}
+}
+
+### E5. Propietario sin rol PROPIETARIO (se usa el inquilino) -> 400
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "900",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 40,
+  "propietarioId": {{inquilinoId}}
+}
+
+### E6. Transición inválida DISPONIBLE -> ALQUILADA (sin pasar por RESERVADA) -> 400
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Content-Type: application/json
+
+{
+  "nuevoEstado": "ALQUILADA"
+}
+
+### E7. Propiedad inexistente -> 404
+GET {{baseUrl}}/api/propiedades/999999
+
+### E8. Enum inválido en tipologia -> 400 indicando el campo y los valores permitidos
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "PISCINA",
+  "calle": "Independencia",
+  "numero": "900",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 40,
+  "propietarioId": {{propietarioId}}
+}
+
+### E9. Superficie cubierta mayor que la total -> 400
+POST {{baseUrl}}/api/propiedades
+Content-Type: application/json
+
+{
+  "tipologia": "CASA",
+  "calle": "Independencia",
+  "numero": "900",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 50,
+  "superficieCubiertaM2": 60,
+  "propietarioId": {{propietarioId}}
+}
+
+### E10. /propias en perfil local (no hay JWT) -> 401
+GET {{baseUrl}}/api/propiedades/propias
