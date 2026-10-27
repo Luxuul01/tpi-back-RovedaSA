@@ -30,6 +30,8 @@ spring:
 georef:
   api:
     base-url: https://apis.datos.gob.ar/georef/api
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
 
 logging:
   level:
