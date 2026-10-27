@@ -1,0 +1,4 @@
+# Perfil local: la seguridad queda desactivada (ver SecurityConfig) para probar sin token de Keycloak
+logging:
+  level:
+    org.springframework.security: INFO
