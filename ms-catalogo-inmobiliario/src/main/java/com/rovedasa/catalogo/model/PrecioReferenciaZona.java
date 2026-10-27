@@ -1,10 +1,13 @@
 package com.rovedasa.catalogo.model;
 
+import com.rovedasa.catalogo.util.NormalizadorTexto;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
@@ -24,7 +27,7 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "precios_referencia_zona", uniqueConstraints = @UniqueConstraint(
         name = "uk_precio_zona_provincia_ciudad_nombre",
-        columnNames = {"provincia", "ciudad", "nombre_zona"}))
+        columnNames = {"provincia_normalizada", "ciudad_normalizada", "nombre_zona"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PrecioReferenciaZona {
@@ -43,6 +46,13 @@ public class PrecioReferenciaZona {
 
     @Column(nullable = false, length = 100)
     private String ciudad;
+
+    // Provincia y ciudad sin acentos y en minúscula, para buscar sin depender de cómo vengan escritas
+    @Column(name = "provincia_normalizada", nullable = false, length = 100)
+    private String provinciaNormalizada;
+
+    @Column(name = "ciudad_normalizada", nullable = false, length = 100)
+    private String ciudadNormalizada;
 
     private Double latitudCentro;
 
@@ -77,6 +87,13 @@ public class PrecioReferenciaZona {
         this.valorM2 = valorM2;
         this.puntajeZona = puntajeZona;
         this.fechaActualizacion = fechaActualizacion;
+    }
+
+    @PrePersist
+    @PreUpdate
+    void calcularCamposNormalizados() {
+        this.provinciaNormalizada = NormalizadorTexto.normalizar(provincia);
+        this.ciudadNormalizada = NormalizadorTexto.normalizar(ciudad);
     }
 
     public boolean esValorPorDefecto() {
