@@ -43,6 +43,23 @@ class PrecioReferenciaZonaTest {
         assertEquals(0.0, nuevaCordoba.distanciaAlCentroMetros(-31.4245, -64.1870), 1e-6);
     }
 
+    @Test
+    void debeCalcularProvinciaYCiudadNormalizadasAntesDePersistir() {
+        PrecioReferenciaZona zona = PrecioReferenciaZona.builder()
+                .nombreZona("Centro")
+                .provincia("  Córdoba ")
+                .ciudad("RÍO CUARTO")
+                .valorM2(new BigDecimal("8000"))
+                .puntajeZona(6)
+                .fechaActualizacion(LocalDate.now())
+                .build();
+
+        zona.calcularCamposNormalizados();
+
+        assertEquals("cordoba", zona.getProvinciaNormalizada());
+        assertEquals("rio cuarto", zona.getCiudadNormalizada());
+    }
+
     private PrecioReferenciaZona zona(String nombre, Double latitud, Double longitud, Integer radio) {
         return PrecioReferenciaZona.builder()
                 .nombreZona(nombre)
