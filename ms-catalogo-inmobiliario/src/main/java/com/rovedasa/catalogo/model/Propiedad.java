@@ -25,6 +25,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.UUID;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
 public class Propiedad {
 
     private static final String PREFIJO_CODIGO = "PROP-";
+    private static final BigDecimal PONDERACION_SUPERFICIE_DESCUBIERTA = new BigDecimal("0.5");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -78,33 +80,27 @@ public class Propiedad {
     @Column(length = 10)
     private String codigoPostal;
 
-    // Datos devueltos por GeoRef al normalizar la dirección
-    @Setter
+    // Datos devueltos por GeoRef al normalizar la dirección (ver aplicarNormalizacion)
     private String direccionNormalizada;
 
-    @Setter
     private Double latitud;
 
-    @Setter
     private Double longitud;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal superficieTotalM2;
 
-    @Setter
     @Column(precision = 10, scale = 2)
     private BigDecimal superficieCubiertaM2;
 
-    @Setter
+    // Resultado de la tasación (ver aplicarTasacion)
     @Column(precision = 15, scale = 2)
     private BigDecimal precioSugeridoM2;
 
-    @Setter
     @Column(precision = 15, scale = 2)
     private BigDecimal canonBaseSugerido;
 
     // Zona con la que se tasó la propiedad (trazabilidad del precio sugerido)
-    @Setter
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "zona_referencia_id")
     private PrecioReferenciaZona zonaReferencia;
@@ -140,6 +136,12 @@ public class Propiedad {
     private Propiedad(String codigo, TipologiaEnum tipologia, String calle, String numero, String piso,
             String departamento, String barrio, String ciudad, String provincia, String codigoPostal,
             BigDecimal superficieTotalM2, BigDecimal superficieCubiertaM2, Persona propietario) {
+        if (superficieTotalM2 != null && superficieCubiertaM2 != null
+                && superficieCubiertaM2.compareTo(superficieTotalM2) > 0) {
+            throw new OperacionInvalidaException(String.format(
+                    "La superficie cubierta (%s m²) no puede ser mayor que la superficie total (%s m²)",
+                    superficieCubiertaM2, superficieTotalM2));
+        }
         this.codigo = codigo;
         this.tipologia = tipologia;
         this.calle = calle;
@@ -161,6 +163,43 @@ public class Propiedad {
         if (codigo == null) {
             codigo = PREFIJO_CODIGO + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
         }
+    }
+
+    /**
+     * Guarda el resultado de GeoRef. Provincia y ciudad se reemplazan por los nombres oficiales
+     * para que la tasación y las búsquedas trabajen siempre con la misma grafía.
+     */
+    public void aplicarNormalizacion(String direccionNormalizada, String provinciaOficial, String ciudadOficial,
+            Double latitud, Double longitud) {
+        exigirTexto(direccionNormalizada, "direccionNormalizada");
+        exigirTexto(provinciaOficial, "provinciaOficial");
+        exigirTexto(ciudadOficial, "ciudadOficial");
+        this.direccionNormalizada = direccionNormalizada;
+        this.provincia = provinciaOficial;
+        this.ciudad = ciudadOficial;
+        this.latitud = latitud;
+        this.longitud = longitud;
+    }
+
+    // Los tres valores pueden ser nulos cuando la ciudad no tiene cobertura de precios de referencia
+    public void aplicarTasacion(PrecioReferenciaZona zona, BigDecimal precioSugeridoM2, BigDecimal canonBaseSugerido) {
+        this.zonaReferencia = zona;
+        this.precioSugeridoM2 = precioSugeridoM2;
+        this.canonBaseSugerido = canonBaseSugerido;
+    }
+
+    /**
+     * Superficie homogeneizada: lo cubierto computa al 100% y lo descubierto (patios, balcones,
+     * terrazas) pondera al 50%. Si no se informó la cubierta, se toma la total.
+     */
+    public BigDecimal superficieComputableM2() {
+        if (superficieCubiertaM2 == null) {
+            return superficieTotalM2.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal descubierta = superficieTotalM2.subtract(superficieCubiertaM2);
+        return superficieCubiertaM2
+                .add(descubierta.multiply(PONDERACION_SUPERFICIE_DESCUBIERTA))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     public boolean estaDisponible() {
@@ -215,5 +254,12 @@ public class Propiedad {
         throw new OperacionInvalidaException(String.format(
                 "No se puede %s la propiedad %s: su estado actual es %s y la operación requiere %s",
                 operacion, codigo, estado, permitidos));
+    }
+
+    // Error de programación (no de negocio): quien llama tiene que pasar los datos de GeoRef completos
+    private static void exigirTexto(String valor, String nombreCampo) {
+        if (valor == null || valor.isBlank()) {
+            throw new IllegalArgumentException("El campo " + nombreCampo + " es obligatorio para aplicar la normalización");
+        }
     }
 }
