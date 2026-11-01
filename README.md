@@ -1,4 +1,4 @@
-﻿# TPI Backend — Alquileres Roveda SA
+# TPI Backend — Alquileres Roveda SA
 
 Sistema Backend de Administración de Alquileres Inmobiliarios basado en microservicios, desarrollado para el **Trabajo Práctico Integrador 2026** (Backend de Aplicaciones / Diseño de Sistemas de Información — UTN FRC).
 
@@ -68,7 +68,7 @@ El sistema se compone de una arquitectura desacoplada en microservicios, punto d
 * **Maven 3.9+**.
 * **Docker y Docker Compose**.
 
-### 1. Levantar Infraestructura Auxiliar (Bases de Datos y Keycloak)
+### 1. Levantar Infraestructura Auxiliar (Bases de Datos, Keycloak y Observabilidad)
 ```bash
 docker compose up -d
 ```
@@ -76,6 +76,9 @@ Esto iniciará:
 * `tpi-db-catalogo`: PostgreSQL en `localhost:5432` (`catalogo_db`).
 * `tpi-db-contratos`: PostgreSQL en `localhost:5433` (`contratos_db`).
 * `tpi-keycloak`: Keycloak en `localhost:8083` (Realm `rovedasa-realm` pre-configurado).
+* `tpi-loki`: Motor de almacenamiento de logs en `localhost:3100`.
+* `tpi-promtail`: Recolector de logs de Docker conectado a `/var/run/docker.sock`.
+* `tpi-grafana`: Tablero web de observabilidad en `http://localhost:3000` (User: `admin` / Pass: `admin`).
 
 ### 2. Compilar e Instalar el Proyecto
 Desde la raíz del repositorio:
@@ -95,6 +98,27 @@ cd ms-contratos && mvn spring-boot:run
 # Terminal 3: Gateway
 cd api-gateway && mvn spring-boot:run
 ```
+
+---
+
+## 📊 Centralización de Logs y Observabilidad (Stack PLG)
+
+El ecosistema implementa el pipeline de 4 etapas recomendado por la cátedra (**Apunte 24**) bajo el principio *12-Factor App*:
+
+| Etapa | Tecnología | Rol en la Arquitectura |
+| :--- | :--- | :--- |
+| **1. Generación** | `stdout / stderr` | Los microservicios Java no guardan logs en servidores remotos; escriben a consola estándar con `logback-spring.xml` formateando el `[%X{correlationId}]`. |
+| **2. Recolección** | **Promtail** | Agente liviano montado sobre `/var/run/docker.sock` que recolecta los flujos de los contenedores y los etiqueta automáticamente. |
+| **3. Almacenamiento** | **Loki** | Almacena y comprime los logs indexados por etiquetas (*labels*) en el volumen persistente `loki_data` (asegurando persistencia ante caídas de contenedores). |
+| **4. Visualización** | **Grafana** | Interfaz web en `http://localhost:3000` (credenciales `admin` / `admin`) con datasource Loki preconfigurado. |
+
+### Consultas útiles en Grafana (Explore con LogQL)
+* Ver logs de un contenedor específico:
+  `{container="tpi-api-gateway"}`
+* Seguir la traza completa de una operación a través de todos los microservicios usando el Correlation ID:
+  `{container=~"tpi-.*"} |= "a1b2-c3d4-uuid"`
+* Filtrar únicamente errores críticos:
+  `{container=~"tpi-.*"} |= "ERROR"`
 
 ---
 

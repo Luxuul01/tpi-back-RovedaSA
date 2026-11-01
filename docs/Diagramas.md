@@ -334,6 +334,11 @@ System_Boundary(sistema_backend, "Sistema Backend TPI (Docker Compose Network)")
     ContainerDb(db_catalogo, "DB Catálogo", "PostgreSQL (Esquema Catálogo)", "Persiste tablas: propiedades, personas y caché de situación crediticia BCRA.")
 
     ContainerDb(db_contratos, "DB Contratos", "PostgreSQL (Esquema Contratos)", "Persiste tablas: contratos (con propietarioId e inquilinoId), ajustes y caché de índices ICL (fallback).")
+
+    ' Subsistema de Observabilidad y Centralización de Logs (Stack PLG)
+    Container(promtail, "Promtail", "Daemon / Agente", "Recolecta automáticamente streams stdout/stderr de todos los contenedores Docker mediante el socket de Docker.")
+    ContainerDb(loki, "Loki", "Log Storage Engine", "Persiste y comprime flujos de logs en volumen dedicado, indexados por labels de contenedor.")
+    Container(grafana, "Grafana", "Dashboard Web (:3000)", "Tablero de visualización y consulta centralizada de logs (LogQL) y trazabilidad por X-Correlation-ID.")
 }
 
 ' 1. Flujo de Autenticación de los Actores con Keycloak
@@ -366,6 +371,14 @@ Rel_D(ms_contratos, db_contratos, "Lee y escribe entidades", "Spring Data JPA / 
 Rel(ms_catalogo, api_georef, "Normaliza dirección y obtiene lat/lon en alta de propiedad", "RestClient / HTTPS")
 Rel(ms_catalogo, api_bcra, "Verifica situación crediticia del garante por CUIT", "RestClient / HTTPS")
 Rel(ms_contratos, api_bcra, "Obtiene variación del índice ICL entre fechas para aplicar ajuste", "RestClient / HTTPS")
+
+' 8. Flujo de Centralización de Logs y Observabilidad (Stack PLG)
+Rel_D(api_gateway, promtail, "Emite logs a stdout", "Docker stdout")
+Rel_D(ms_catalogo, promtail, "Emite logs a stdout", "Docker stdout")
+Rel_D(ms_contratos, promtail, "Emite logs a stdout", "Docker stdout")
+Rel(promtail, loki, "Despacha flujos de logs", "HTTP / Push :3100")
+Rel(grafana, loki, "Consulta logs por labels y X-Correlation-ID", "LogQL :3100")
+Rel(admin, grafana, "Audita logs y trazas de error", "Web UI / HTTP :3000")
 
 @enduml
 ```

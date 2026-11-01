@@ -50,13 +50,61 @@ services:
     ports:
       - "8083:8080"
     volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks:
       - tpi-network
+
+  # ==========================================
+  # Observabilidad y Centralización de Logs (PLG Stack)
+  # ==========================================
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: tpi-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks:
+      - tpi-network
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: tpi-promtail
+    restart: unless-stopped
+    volumes:
+      - ./docker/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - tpi-network
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: tpi-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - tpi-network
+    depends_on:
+      - loki
 
 volumes:
   pgdata_catalogo:
   pgdata_contratos:
+  loki_data:
+  grafana_data:
 
 networks:
   tpi-network:
