@@ -1,0 +1,2 @@
+# Normalizar fines de linea a LF para evitar diferencias entre Windows y Linux/CI
+* text=auto eol=lf

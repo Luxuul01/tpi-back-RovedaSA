@@ -34,6 +34,31 @@ package "ms-catalogo-inmobiliario" {
         GARANTE
     }
 
+    enum TipologiaEnum <<enum>> {
+        DEPARTAMENTO
+        CASA
+        PH
+        LOCAL_COMERCIAL
+        OFICINA
+        COCHERA
+        --
+        - factorAjuste: BigDecimal
+        + getFactorAjuste(): BigDecimal
+    }
+
+    class PrecioReferenciaZona {
+        - id: Long
+        - nombreZona: String
+        - provincia: String
+        - ciudad: String
+        - latitudCentro: Double
+        - longitudCentro: Double
+        - radioMetros: Double
+        - valorM2: BigDecimal
+        - puntajeZona: Integer
+        + estaDentroDelRadio(lat: Double, lon: Double): Boolean
+    }
+
     class Persona {
         - id: Long
         - keycloakUserId: String
@@ -42,7 +67,7 @@ package "ms-catalogo-inmobiliario" {
         - apellido: String
         - email: String
         - telefono: String
-        - tipoPersona: TipoPersonaEnum
+        - roles: Set<TipoPersonaEnum>
         - ingresosMensualesDeclarados: BigDecimal
         - situacionCrediticiaBcra: Integer
         - chequesRechazados: Integer
@@ -53,7 +78,7 @@ package "ms-catalogo-inmobiliario" {
     class Propiedad {
         - id: Long
         - codigo: String
-        - tipologia: String
+        - tipologia: TipologiaEnum
         - calle: String
         - numero: String
         - piso: String
@@ -67,9 +92,6 @@ package "ms-catalogo-inmobiliario" {
         - superficieCubiertaM2: BigDecimal
         - precioSugeridoM2: BigDecimal
         - canonBaseSugerido: BigDecimal
-        - propietarioId: Long
-        - inquilinoId: Long
-        - garanteId: Long
         - estado: EstadoPropiedad
         + estaDisponible(): Boolean
         + reservar(): void
@@ -78,8 +100,12 @@ package "ms-catalogo-inmobiliario" {
     }
 
     Propiedad --> EstadoPropiedad : estado
-    Persona --> TipoPersonaEnum : tipoPersona
-    Propiedad ..> Persona : "propietarioId / inquilinoId / garanteId (FK lógica)"
+    Propiedad --> TipologiaEnum : tipologia
+    Propiedad --> PrecioReferenciaZona : zonaReferencia (0..1)
+    Propiedad --> Persona : propietario (1)
+    Propiedad --> Persona : inquilino (0..1)
+    Propiedad --> Persona : garante (0..1)
+    Persona --> TipoPersonaEnum : roles (Set)
 }
 
 package "ms-contratos" {

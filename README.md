@@ -20,7 +20,7 @@ El sistema se compone de una arquitectura desacoplada en microservicios, punto d
 
 ```
                                   ┌────────────────────────┐
-                                  │   Keycloak IdP (8080)  │
+                                  │   Keycloak IdP (8083)  │
                                   │   (OAuth2 / OIDC JWT)  │
                                   └───────────▲────────────┘
                                               │ Valida JWT
@@ -75,7 +75,7 @@ docker compose up -d
 Esto iniciará:
 * `tpi-db-catalogo`: PostgreSQL en `localhost:5432` (`catalogo_db`).
 * `tpi-db-contratos`: PostgreSQL en `localhost:5433` (`contratos_db`).
-* `tpi-keycloak`: Keycloak en `localhost:8080` (Realm `rovedasa-realm` pre-configurado).
+* `tpi-keycloak`: Keycloak en `localhost:8083` (Realm `rovedasa-realm` pre-configurado).
 
 ### 2. Compilar e Instalar el Proyecto
 Desde la raíz del repositorio:
@@ -118,3 +118,4 @@ cd api-gateway && mvn spring-boot:run
    * Requiere compilación local limpia (`mvn clean install`).
    * Al menos 1 aprobación (Review) de un compañero.
    * Merge con opción **"Squash and Merge"**.
+

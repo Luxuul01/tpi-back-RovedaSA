@@ -21,6 +21,7 @@
   "clients": [
     {
       "clientId": "rovedasa-backend",
+      "name": "Cliente publico para frontend y Postman",
       "enabled": true,
       "publicClient": true,
       "directAccessGrantsEnabled": true,
@@ -30,10 +31,22 @@
       "webOrigins": [
         "*"
       ]
+    },
+    {
+      "clientId": "backend-services",
+      "name": "Cliente confidencial para comunicacion inter-servicios M2M",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "backend-secret-rovedasa-2026",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
     }
   ],
   "users": [
     {
+      "id": "00000000-0000-0000-0000-000000000001",
       "username": "admin",
       "enabled": true,
       "email": "admin@rovedasa.com",
@@ -51,6 +64,7 @@
       ]
     },
     {
+      "id": "00000000-0000-0000-0000-000000000002",
       "username": "propietario1",
       "enabled": true,
       "email": "propietario1@gmail.com",
@@ -68,6 +82,7 @@
       ]
     },
     {
+      "id": "00000000-0000-0000-0000-000000000003",
       "username": "inquilino1",
       "enabled": true,
       "email": "inquilino1@gmail.com",
