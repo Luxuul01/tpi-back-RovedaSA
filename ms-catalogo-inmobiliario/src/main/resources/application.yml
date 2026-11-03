@@ -12,12 +12,18 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         format_sql: true
+
+  data:
+    web:
+      pageable:
+        max-page-size: 100
 
   security:
     oauth2:
@@ -29,6 +35,8 @@ spring:
 georef:
   api:
     base-url: https://apis.datos.gob.ar/georef/api
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
 
 logging:
   level:
