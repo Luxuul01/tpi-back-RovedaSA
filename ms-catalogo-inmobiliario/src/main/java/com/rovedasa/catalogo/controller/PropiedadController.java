@@ -2,7 +2,6 @@ package com.rovedasa.catalogo.controller;
 
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
-import com.rovedasa.catalogo.exception.AutenticacionRequeridaException;
 import com.rovedasa.catalogo.service.PropiedadService;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
@@ -65,15 +64,12 @@ public class PropiedadController {
         return propiedadService.obtener(id);
     }
 
-    // CU-08: la identidad sale del claim sub del JWT validado; nunca se acepta el id del propietario por parámetro
+    // CU-08: la identidad sale del claim sub del JWT validado; nunca se acepta el id del propietario por parámetro.
+    // Sin propiedades devuelve [] (200), no 404. El @PreAuthorize del método reemplaza al de la clase.
     @Operation(summary = "Listar las propiedades del propietario autenticado")
     @GetMapping("/propias")
     @PreAuthorize("hasRole('PROPIETARIO')")
     public List<PropiedadResponse> listarPropias(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            throw new AutenticacionRequeridaException(
-                    "Este endpoint requiere un token JWT; no está disponible en el perfil local");
-        }
         return propiedadService.listarPropias(jwt.getSubject());
     }
 
