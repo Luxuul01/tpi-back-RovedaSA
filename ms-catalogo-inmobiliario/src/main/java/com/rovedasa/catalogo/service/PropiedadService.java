@@ -7,6 +7,7 @@ import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.mapper.PropiedadMapper;
 import com.rovedasa.catalogo.model.Persona;
 import com.rovedasa.catalogo.model.Propiedad;
+import com.rovedasa.catalogo.model.TransicionesEstadoPropiedad;
 import com.rovedasa.catalogo.model.enums.TipoPersonaEnum;
 import com.rovedasa.catalogo.repository.PersonaRepository;
 import com.rovedasa.catalogo.repository.PropiedadRepository;
@@ -136,29 +137,32 @@ public class PropiedadService {
     }
 
     /**
-     * Cambio de estado pedido por ms-contratos (seña, activación, cancelación, rescisión) o por el administrador.
-     * Las guardas de cada transición viven en la entidad; acá se resuelven las personas y sus roles.
+     * Cambio de estado pedido por ms-contratos (seña, activación, cancelación, rescisión).
+     * Primero se valida la transición contra TransicionesEstadoPropiedad; después la entidad aplica sus
+     * propias guardas (ej. alquilar exige inquilino) y acá se resuelven las personas y sus roles.
+     * Dos cambios concurrentes sobre la misma propiedad los frena el @Version de Propiedad al hacer commit.
      */
     @Transactional
     public PropiedadDTO actualizarEstado(Long id, ActualizarEstadoPropiedadDTO solicitud) {
         Propiedad propiedad = buscar(id);
         EstadoPropiedadEnum estadoAnterior = propiedad.getEstado();
+        EstadoPropiedadEnum estadoNuevo = solicitud.getNuevoEstado();
 
-        switch (solicitud.getNuevoEstado()) {
-            case RESERVADA -> reservar(propiedad, solicitud.getInquilinoId(), solicitud.getGaranteId());
-            case ALQUILADA -> propiedad.alquilar();
-            case DISPONIBLE -> {
-                // DISPONIBLE significa "reactivar" si estaba dada de baja, o "liberar" si estaba reservada/alquilada
-                if (propiedad.getEstado() == EstadoPropiedadEnum.INACTIVA) {
-                    propiedad.reactivar();
-                } else {
-                    propiedad.liberar();
-                }
-            }
-            case INACTIVA -> propiedad.inactivar();
+        if (!TransicionesEstadoPropiedad.puedeTransicionar(estadoAnterior, estadoNuevo)) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede pasar de %s a %s", estadoAnterior, estadoNuevo));
         }
 
-        log.info("Propiedad {} pasó de {} a {}", propiedad.getCodigo(), estadoAnterior, propiedad.getEstado());
+        // INACTIVA nunca es un destino válido (ver TransicionesEstadoPropiedad), por eso no tiene rama
+        switch (estadoNuevo) {
+            case RESERVADA -> reservar(propiedad, solicitud.getInquilinoId(), solicitud.getGaranteId());
+            case ALQUILADA -> propiedad.alquilar();
+            case DISPONIBLE -> propiedad.liberar();
+            default -> throw new IllegalStateException("Transición habilitada sin implementar: " + estadoNuevo);
+        }
+
+        log.info("Propiedad ID {} ({}) pasó de {} a {}", id, propiedad.getCodigo(), estadoAnterior,
+                propiedad.getEstado());
         return PropiedadMapper.aPropiedadDTO(propiedad);
     }
 

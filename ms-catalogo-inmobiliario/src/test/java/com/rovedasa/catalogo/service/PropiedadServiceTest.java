@@ -213,30 +213,55 @@ class PropiedadServiceTest {
     }
 
     @Test
-    void actualizarADisponibleDesdeInactivaReactiva() {
+    void actualizarADisponibleDesdeReservadaCaeLaReserva() {
         Propiedad propiedad = propiedadDisponible();
-        propiedad.inactivar();
+        propiedad.reservar(inquilino, garante);
 
         PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, null, null));
 
         assertEquals(EstadoPropiedadEnum.DISPONIBLE, dto.getEstado());
+        assertNull(dto.getInquilinoId());
     }
 
     @Test
-    void actualizarAInactiva() {
+    void transicionInvalidaDisponibleAAlquiladaLanzaOperacionInvalidaConMensajeClaro() {
+        Propiedad propiedad = propiedadDisponible();
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.ALQUILADA, null, null)));
+
+        assertEquals("No se puede pasar de DISPONIBLE a ALQUILADA", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+    }
+
+    @Test
+    void transicionAlMismoEstadoLanzaOperacionInvalida() {
         propiedadDisponible();
 
-        PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null));
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, null, null)));
 
-        assertEquals(EstadoPropiedadEnum.INACTIVA, dto.getEstado());
+        assertEquals("No se puede pasar de DISPONIBLE a DISPONIBLE", ex.getMessage());
     }
 
     @Test
-    void transicionInvalidaDisponibleAAlquiladaSePropagaDesdeLaEntidad() {
+    void inactivarPorPatchNoEstaPermitido() {
         propiedadDisponible();
 
         assertThrows(OperacionInvalidaException.class,
-                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.ALQUILADA, null, null)));
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
+    }
+
+    @Test
+    void transicionInvalidaSeRechazaAntesDeBuscarPersonas() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.RESERVADA, 2L, 3L)));
+
+        verifyNoInteractions(personaRepository);
     }
 
     @Test

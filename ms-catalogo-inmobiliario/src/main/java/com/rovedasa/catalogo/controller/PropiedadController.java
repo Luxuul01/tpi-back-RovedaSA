@@ -73,7 +73,8 @@ public class PropiedadController {
         return propiedadService.listarPropias(jwt.getSubject());
     }
 
-    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler, liberación, baja o reactivación)")
+    // Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)
+    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler o liberación)")
     @PatchMapping("/{id}/estado")
     public PropiedadDTO actualizarEstado(@PathVariable("id") Long id,
             @Valid @RequestBody ActualizarEstadoPropiedadDTO solicitud) {
