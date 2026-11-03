@@ -28,6 +28,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -316,6 +317,37 @@ class PropiedadServiceTest {
 
         assertThrows(RecursoNoEncontradoException.class,
                 () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
+    }
+
+    // --- listarPropias ---
+
+    @Test
+    void listarPropiasFiltraPorElKeycloakUserIdDelToken() {
+        Propiedad propiedad = Propiedad.builder()
+                .codigo("PROP-TEST0001")
+                .tipologia(TipologiaEnum.DEPARTAMENTO)
+                .calle("Independencia")
+                .numero("900")
+                .ciudad("Córdoba")
+                .provincia("Córdoba")
+                .superficieTotalM2(new BigDecimal("55"))
+                .propietario(propietario)
+                .build();
+        when(propiedadRepository.findByPropietario_KeycloakUserId("kc-propietario-1"))
+                .thenReturn(List.of(propiedad));
+
+        List<PropiedadResponse> propias = propiedadService.listarPropias("kc-propietario-1");
+
+        assertEquals(1, propias.size());
+        assertEquals("PROP-TEST0001", propias.get(0).codigo());
+        assertEquals(1L, propias.get(0).propietarioId());
+    }
+
+    @Test
+    void listarPropiasSinPropiedadesDevuelveListaVacia() {
+        when(propiedadRepository.findByPropietario_KeycloakUserId("kc-sin-propiedades")).thenReturn(List.of());
+
+        assertTrue(propiedadService.listarPropias("kc-sin-propiedades").isEmpty());
     }
 
     // --- Datos de prueba ---
