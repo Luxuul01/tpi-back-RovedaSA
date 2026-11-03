@@ -264,40 +264,45 @@ ms-contratos ..> ms-catalogo-inmobiliario : "comunicación sincrónica vía Rest
 ```
 # C4 - Contexto
 
+![Diagrama de Contexto C4 - Nivel 1](./img/C4-Contexto.png)
+
 ```plantuml
-@startuml
+@startuml C4_Contexto
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-LAYOUT_LEFT_RIGHT()
+LAYOUT_TOP_DOWN()
 SHOW_PERSON_OUTLINE()
 
-title Diagrama de Contexto (C1) - Sistema de Administración de Alquileres
+title Diagrama de Contexto (C4 - Nivel 1) - Alquileres Roveda SA
 
-' Actores del dominio con aislamiento estricto por rol
-Person(admin, "Administrador de Propiedades", "Rol: ADMINISTRADOR. Opera integralmente el sistema: registra clientes y propiedades, evalúa garantes y gestiona todo el ciclo de vida de los contratos.")
-Person(propietario, "Propietario", "Rol: PROPIETARIO (Solo Lectura). Delega la administración. Consulta exclusivamente sus propiedades y los contratos celebrados sobre esas propiedades.")
-Person(inquilino, "Inquilino", "Rol: INQUILINO (Solo Lectura). Consulta exclusivamente sus propios contratos de alquiler, canon actual e historial de aumentos.")
+Person(admin, "Administrador", "Rol ADMINISTRADOR. Personal de la inmobiliaria que opera todo el sistema.")
+Person(propietario, "Propietario", "Rol PROPIETARIO. Dueño de inmuebles. Solo lectura de su propia información.")
+Person(inquilino, "Inquilino", "Rol INQUILINO. Locatario. Solo lectura de su propia información.")
 
-' Sistema en estudio
-System(sistema_alquileres, "Sistema Backend de Administración de Alquileres", "Centraliza la operación inmobiliaria para los administradores y brinda transparencia de consulta a propietarios e inquilinos.")
+System(sistema, "Sistema de Administración de Alquileres", "Backend REST. Gestiona personas, propiedades y el ciclo de vida de los contratos, con ajustes por ICL, cuotas y mora.")
 
-' Sistemas Externos
-System_Ext(keycloak, "Keycloak Identity Provider", "Servidor OIDC / OAuth2. Autentica usuarios y emite tokens JWT con roles (ADMINISTRADOR, PROPIETARIO, INQUILINO).")
-System_Ext(api_bcra, "API Pública BCRA", "Provee Central de Deudores (riesgo crediticio por CUIT) y Principales Variables (Índice ICL para aumentos).")
-System_Ext(api_georef, "API Pública GeoRef AR", "Normaliza direcciones y obtiene coordenadas (lat/lon) al registrar propiedades.")
+System_Ext(keycloak, "Keycloak", "Proveedor de identidad OAuth2 / OpenID Connect. Autentica usuarios y emite tokens JWT con roles.")
+System_Ext(georef, "API GeoRef AR", "Servicio público de normalización de direcciones del Instituto Geográfico Nacional.")
+System_Ext(bcra_deudores, "API BCRA - Central de Deudores", "Servicio público con la situación crediticia y los cheques rechazados de una persona por CUIT/CUIL.")
+System_Ext(bcra_estadisticas, "API BCRA - Estadísticas", "Servicio público con la serie diaria del Índice de Contratos de Locación (ICL).")
 
-' Relaciones de los actores
-Rel(admin, sistema_alquileres, "Gestiona catálogo y opera ciclo de vida de contratos (Lectura y Escritura)", "HTTPS / JSON")
-Rel(propietario, sistema_alquileres, "Consulta sus propiedades y contratos de esas propiedades (Solo GET)", "HTTPS / JSON")
-Rel(inquilino, sistema_alquileres, "Consulta únicamente sus propios contratos de alquiler (Solo GET)", "HTTPS / JSON")
+Rel(admin, sistema, "Registra personas y propiedades, opera contratos, ajustes, rescisiones y pagos", "HTTPS / REST + JWT")
+Rel(propietario, sistema, "Consulta sus propiedades y los contratos y cuotas sobre ellas", "HTTPS / REST (solo GET) + JWT")
+Rel(inquilino, sistema, "Consulta sus contratos, ajustes y cuotas con mora", "HTTPS / REST (solo GET) + JWT")
 
-' Relaciones hacia sistemas externos
-Rel(sistema_alquileres, keycloak, "Valida tokens JWT y roles de acceso", "OIDC / JWKS (HTTPS)")
-Rel(sistema_alquileres, api_bcra, "Evalúa solvencia de garantes y consulta índice ICL", "REST / HTTPS")
-Rel(sistema_alquileres, api_georef, "Geocodifica y normaliza direcciones de propiedades", "REST / HTTPS")
+Rel(admin, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(propietario, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(inquilino, keycloak, "Se autentica y obtiene token", "OIDC")
 
+Rel(sistema, keycloak, "Valida la firma de los tokens con sus claves públicas", "HTTPS / JWKS")
+Rel(sistema, georef, "Normaliza direcciones y obtiene coordenadas", "HTTPS / REST")
+Rel(sistema, bcra_deudores, "Consulta la solvencia del garante por CUIT", "HTTPS / REST")
+Rel(sistema, bcra_estadisticas, "Obtiene valores del ICL para ajustar el canon", "HTTPS / REST")
+
+SHOW_LEGEND()
 @enduml
 ```
+
 # C4 - Contenedores
 
 
