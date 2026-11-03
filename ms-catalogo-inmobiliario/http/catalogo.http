@@ -1,20 +1,39 @@
 ### =====================================================================
 ### ms-catalogo-inmobiliario — flujo manual (extensión REST Client de VS Code)
-### Levantar con perfil local (sin seguridad):
-###   .\mvnw.cmd -pl ms-catalogo-inmobiliario spring-boot:run "-Dspring-boot.run.profiles=local"
+### Levantar Keycloak (docker compose) y después el micro:
+###   .\mvnw.cmd -pl ms-catalogo-inmobiliario spring-boot:run
+### Todos los endpoints exigen JWT: ejecutar primero los requests T1 y T2 para obtener los tokens.
 ### Ejecutar los requests en orden: los ids se encadenan con las variables de abajo.
 ### Pensado para una base recién creada (los CUIT se repetirían en una segunda corrida).
 ### =====================================================================
 
 @baseUrl = http://localhost:8081
+@keycloakUrl = http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/token
+@tokenAdmin = {{loginAdmin.response.body.$.access_token}}
+@tokenPropietario = {{loginPropietario.response.body.$.access_token}}
 @propietarioId = {{crearPropietario.response.body.$.id}}
 @inquilinoId = {{crearInquilino.response.body.$.id}}
 @garanteId = {{crearGarante.response.body.$.id}}
 @propiedadId = {{crearPropiedadNuevaCordoba.response.body.$.id}}
 
+### T1. Token de admin (rol ADMINISTRADOR)
+# @name loginAdmin
+POST {{keycloakUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=rovedasa-backend&username=admin&password=admin123
+
+### T2. Token de propietario1 (rol PROPIETARIO, sub 00000000-0000-0000-0000-000000000002)
+# @name loginPropietario
+POST {{keycloakUrl}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=rovedasa-backend&username=propietario1&password=prop123
+
 ### 1. Crear propietario (CUIT 20-12345678-6, válido) -> 201
 # @name crearPropietario
 POST {{baseUrl}}/api/personas
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -23,13 +42,14 @@ Content-Type: application/json
   "apellido": "Pérez",
   "email": "juan.perez@mail.com",
   "telefono": "3515550001",
-  "keycloakUserId": "kc-propietario-1",
+  "keycloakUserId": "00000000-0000-0000-0000-000000000002",
   "roles": ["PROPIETARIO"]
 }
 
 ### 2. Crear inquilino (CUIL 27-12345678-0, válido) -> 201
 # @name crearInquilino
 POST {{baseUrl}}/api/personas
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -37,7 +57,7 @@ Content-Type: application/json
   "nombre": "Lucía",
   "apellido": "Gómez",
   "email": "lucia.gomez@mail.com",
-  "keycloakUserId": "kc-inquilino-1",
+  "keycloakUserId": "00000000-0000-0000-0000-000000000003",
   "roles": ["INQUILINO"],
   "ingresosMensualesDeclarados": 950000
 }
@@ -45,6 +65,7 @@ Content-Type: application/json
 ### 3. Crear garante (CUIL 20-12345670-0, válido; sin usuario de Keycloak) -> 201
 # @name crearGarante
 POST {{baseUrl}}/api/personas
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -59,6 +80,7 @@ Content-Type: application/json
 # DEPARTAMENTO, 55 m² totales y 50 cubiertos -> 52,50 m² computables
 # @name crearPropiedadNuevaCordoba
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -79,6 +101,7 @@ Content-Type: application/json
 # CASA, 120 m² totales y 90 cubiertos -> 105,00 m² computables
 # @name crearPropiedadVillaBelgrano
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -95,15 +118,19 @@ Content-Type: application/json
 
 ### 6. Obtener la propiedad por id -> 200
 GET {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
 
 ### 7a. Listado paginado -> 200
 GET {{baseUrl}}/api/propiedades?page=0&size=10&sort=id,desc
+Authorization: Bearer {{tokenAdmin}}
 
 ### 7b. Listado filtrado por estado -> 200
 GET {{baseUrl}}/api/propiedades?estado=DISPONIBLE
+Authorization: Bearer {{tokenAdmin}}
 
 ### 8. Reservar con inquilino y garante -> 200
 PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -114,6 +141,7 @@ Content-Type: application/json
 
 ### 9. Alquilar -> 200
 PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -122,6 +150,7 @@ Content-Type: application/json
 
 ### 10. Liberar (vuelve a DISPONIBLE y desvincula inquilino y garante) -> 200
 PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -130,6 +159,7 @@ Content-Type: application/json
 
 ### 11. Agregarle el rol GARANTE al propietario (repetirlo es idempotente) -> 200
 PATCH {{baseUrl}}/api/personas/{{propietarioId}}/roles
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -138,6 +168,7 @@ Content-Type: application/json
 
 ### 12. Listar personas con rol GARANTE -> 200
 GET {{baseUrl}}/api/personas?rol=GARANTE
+Authorization: Bearer {{tokenAdmin}}
 
 
 ### =====================================================================
@@ -146,6 +177,7 @@ GET {{baseUrl}}/api/personas?rol=GARANTE
 
 ### E1. CUIT con dígito verificador inválido (el correcto es 6) -> 400
 POST {{baseUrl}}/api/personas
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -157,6 +189,7 @@ Content-Type: application/json
 
 ### E2. CUIT duplicado (el del propietario) -> 409
 POST {{baseUrl}}/api/personas
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -168,6 +201,7 @@ Content-Type: application/json
 
 ### E3. Dirección que GeoRef no encuentra (la calle figura como "OSPO TREJO Y SANABRIA") -> 400
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -182,6 +216,7 @@ Content-Type: application/json
 
 ### E4. Ciudad "Córdoba Capital" (no es el nombre oficial de la localidad) -> 400 con mensaje orientativo
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -196,6 +231,7 @@ Content-Type: application/json
 
 ### E5. Propietario sin rol PROPIETARIO (se usa el inquilino) -> 400
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -210,6 +246,7 @@ Content-Type: application/json
 
 ### E6. Transición inválida DISPONIBLE -> ALQUILADA (sin pasar por RESERVADA) -> 400
 PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -218,9 +255,11 @@ Content-Type: application/json
 
 ### E7. Propiedad inexistente -> 404
 GET {{baseUrl}}/api/propiedades/999999
+Authorization: Bearer {{tokenAdmin}}
 
 ### E8. Enum inválido en tipologia -> 400 indicando el campo y los valores permitidos
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -235,6 +274,7 @@ Content-Type: application/json
 
 ### E9. Superficie cubierta mayor que la total -> 400
 POST {{baseUrl}}/api/propiedades
+Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
 
 {
@@ -248,5 +288,18 @@ Content-Type: application/json
   "propietarioId": {{propietarioId}}
 }
 
-### E10. /propias en perfil local (no hay JWT) -> 401
+### E10. Propiedades del propietario autenticado (sale del sub del JWT) -> 200, solo las de propietario1
 GET {{baseUrl}}/api/propiedades/propias
+Authorization: Bearer {{tokenPropietario}}
+
+### E11. /propias sin token -> 401
+GET {{baseUrl}}/api/propiedades/propias
+
+### E12. PATCH de estado con token de PROPIETARIO -> 403 (requiere ADMINISTRADOR)
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/estado
+Authorization: Bearer {{tokenPropietario}}
+Content-Type: application/json
+
+{
+  "nuevoEstado": "RESERVADA"
+}
