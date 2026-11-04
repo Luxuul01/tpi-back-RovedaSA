@@ -1,6 +1,6 @@
 > [!INFO] Descripción del Dominio y Organización
 > * Para ver el detalle redactado del dominio, servicios, bases de datos, APIs externas y roles de acceso, consultar [[Dominio]].
-> * Para ver la asignación de responsabilidades de los 4 integrantes y la estrategia de trabajo, consultar [[PlanDeTrabajo]].
+> * Para ver la asignación de responsabilidades de los 5 integrantes y la estrategia de trabajo, consultar [[PlanDeTrabajo]].
 
 # Diagrama de Clases
 
@@ -168,7 +168,8 @@ package "ms-contratos" {
         - frecuenciaAjusteMeses: Integer
         - montoInicial: BigDecimal
         - montoActual: BigDecimal
-        - moneda: String
+        - propietarioKeycloakId: String
+        - inquilinoKeycloakId: String
         - porcentajeMoraDiaria: BigDecimal
         - diaVencimientoMes: Integer
         - montoSenia: BigDecimal
@@ -202,6 +203,7 @@ package "ms-contratos" {
 
     enum EstadoCuotaEnum <<enum>> {
         PENDIENTE
+        PAGADA
         ANULADA
     }
 
@@ -213,10 +215,12 @@ package "ms-contratos" {
         - fechaVencimiento: LocalDate
         - montoBase: BigDecimal
         - estado: EstadoCuotaEnum
+        - fechaPago: LocalDate
         + calcularMora(fechaReferencia: LocalDate, porcentajeDiario: BigDecimal): BigDecimal
         + calcularTotalConMora(fechaReferencia: LocalDate, porcentajeDiario: BigDecimal): BigDecimal
         + estaVencida(fechaReferencia: LocalDate): Boolean
         + anular(): void
+        + registrarPago(fechaPago: LocalDate): void
     }
 
     class IndiceIclCache {
