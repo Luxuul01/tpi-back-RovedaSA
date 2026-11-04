@@ -305,86 +305,64 @@ SHOW_LEGEND()
 
 # C4 - Contenedores
 
+![Diagrama de Contenedores C4 - Nivel 2](./img/C4-Contenedores.png)
 
 ```plantuml
-@startuml
+@startuml C4_Contenedores
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 LAYOUT_TOP_DOWN()
 SHOW_PERSON_OUTLINE()
 
-title Diagrama de Contenedores (C2) - Sistema Backend de Administración de Alquileres
+title Diagrama de Contenedores (C4 - Nivel 2) - Alquileres Roveda SA
 
-' Actores diferenciados por permisos (Escritura vs Solo Lectura)
-Person(admin, "Administrador", "Rol: ADMINISTRADOR.\nGestiona integralmente el sistema (Altas, bajas, señas, activación de contratos, aplicación de ajustes y rescisiones).")
-Person(propietario, "Propietario", "Rol: PROPIETARIO (Solo Lectura).\nDelega la administración. Consulta únicamente sus propiedades y los contratos celebrados sobre esas propiedades.")
-Person(inquilino, "Inquilino", "Rol: INQUILINO (Solo Lectura).\nConsulta únicamente sus propios contratos de alquiler vigentes, montos actualizados e historial de aumentos.")
+Person(admin, "Administrador", "Rol ADMINISTRADOR. Opera todo el sistema.")
+Person(propietario, "Propietario", "Rol PROPIETARIO. Solo lectura de su información.")
+Person(inquilino, "Inquilino", "Rol INQUILINO. Solo lectura de su información.")
 
-' Sistemas Externos exigidos por la arquitectura
-System_Ext(keycloak, "Keycloak Identity Provider", "Servidor OIDC / OAuth2.\nAutentica usuarios, emite tokens JWT y administra los roles (ADMINISTRADOR, PROPIETARIO, INQUILINO).")
-System_Ext(api_bcra, "API Pública BCRA", "1) Central de Deudores (/centraldedeudores/v1.0/deudas/{cuit})\n2) Estadísticas ICL (/estadisticas/v2.0/principalesvariables)")
-System_Ext(api_georef, "API Pública GeoRef AR", "API de Datos Geográficos (datos.gob.ar).\nNormaliza direcciones y devuelve coordenadas (lat/lon) al registrar inmuebles.")
+System_Ext(keycloak, "Keycloak", "Proveedor de identidad OAuth2 / OIDC. Emite tokens JWT con roles.")
+System_Ext(georef, "API GeoRef AR", "Normalización de direcciones.")
+System_Ext(bcra_deudores, "API BCRA - Central de Deudores", "Situación crediticia por CUIT/CUIL.")
+System_Ext(bcra_estadisticas, "API BCRA - Estadísticas", "Serie diaria del ICL.")
 
-' Límite del Sistema Backend (Red Docker Compose)
-System_Boundary(sistema_backend, "Sistema Backend TPI (Docker Compose Network)") {
-
-    Container(api_gateway, "API Gateway", "Java 21 / Spring Cloud Gateway", "Punto único de entrada.\nEnruta peticiones y aplica Security Filter: valida firma JWT y controla que POST/PUT/PATCH solo sean de ADMINISTRADOR y GET para consultas.")
-
-    Container(ms_catalogo, "ms-catalogo-inmobiliario", "Java 21 / Spring Boot 3", "Responsabilidad: Administra Propiedades y Personas.\nNormaliza direcciones (GeoRef), evalúa solvencia de garantes (BCRA) y gestiona estados del bien (DISPONIBLE, RESERVADA, ALQUILADA).")
-
-    Container(ms_contratos, "ms-contratos", "Java 21 / Spring Boot 3", "Responsabilidad: Gestiona el ciclo de vida de Contratos (Patrón State: Creado, Señado, Activo, Cancelado, Rescindido, Finalizado), calcula aumentos por ICL (BCRA) y liquida penalizaciones/señas.")
-
-    Container(commons_jar, "inmobiliaria-commons", "Artefacto Maven (.jar)", "Componente común reutilizable.\nContiene DTOs de comunicación inter-servicio, manejo global de excepciones (ApiError) y utilidades de extracción de claims JWT.")
-
-    ContainerDb(db_catalogo, "DB Catálogo", "PostgreSQL (Esquema Catálogo)", "Persiste tablas: propiedades, personas y caché de situación crediticia BCRA.")
-
-    ContainerDb(db_contratos, "DB Contratos", "PostgreSQL (Esquema Contratos)", "Persiste tablas: contratos (con propietarioId e inquilinoId), ajustes y caché de índices ICL (fallback).")
-
-    ' Subsistema de Observabilidad y Centralización de Logs (Stack PLG)
-    Container(promtail, "Promtail", "Daemon / Agente", "Recolecta automáticamente streams stdout/stderr de todos los contenedores Docker mediante el socket de Docker.")
-    ContainerDb(loki, "Loki", "Log Storage Engine", "Persiste y comprime flujos de logs en volumen dedicado, indexados por labels de contenedor.")
-    Container(grafana, "Grafana", "Dashboard Web (:3000)", "Tablero de visualización y consulta centralizada de logs (LogQL) y trazabilidad por X-Correlation-ID.")
+System_Boundary(sistema, "Sistema de Administración de Alquileres") {
+    Container(api_gateway, "API Gateway", "Java 21, Spring Cloud Gateway", "Punto único de entrada. Valida el JWT, restringe métodos por rol, enruta a los microservicios y agrega el X-Correlation-ID.")
+    Container(ms_catalogo, "ms-catalogo-inmobiliario", "Java 21, Spring Boot 3", "Personas, propiedades, tasación por zona y estado de ocupación. Normaliza direcciones y evalúa la solvencia de garantes.")
+    Container(ms_contratos, "ms-contratos", "Java 21, Spring Boot 3", "Ciclo de vida del contrato (patrón State), cuotas, mora, rescisión y ajuste periódico por ICL con caché de contingencia.")
+    ContainerDb(db_catalogo, "db-catalogo", "PostgreSQL 16", "Personas y roles, propiedades y zonas de precio de referencia.")
+    ContainerDb(db_contratos, "db-contratos", "PostgreSQL 16", "Contratos, ajustes, cuotas y caché de valores ICL.")
+    Container(promtail, "Promtail", "Grafana Promtail", "Recolecta los logs de los contenedores.")
+    ContainerDb(loki, "Loki", "Grafana Loki", "Almacena e indexa los logs.")
+    Container(grafana, "Grafana", "Grafana", "Consulta de logs y trazas por X-Correlation-ID.")
 }
 
-' 1. Flujo de Autenticación de los Actores con Keycloak
-Rel(admin, keycloak, "Obtiene JWT (Rol: ADMINISTRADOR)", "OIDC / HTTPS")
-Rel(propietario, keycloak, "Obtiene JWT (Rol: PROPIETARIO)", "OIDC / HTTPS")
-Rel(inquilino, keycloak, "Obtiene JWT (Rol: INQUILINO)", "OIDC / HTTPS")
+Rel(admin, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(propietario, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(inquilino, keycloak, "Se autentica y obtiene token", "OIDC")
 
-' 2. Interacción de los Actores hacia el API Gateway
-Rel(admin, api_gateway, "Registra propiedades/personas y opera contratos", "REST (GET, POST, PUT, PATCH) + Bearer JWT")
-Rel(propietario, api_gateway, "Consulta sus propiedades y contratos de esas propiedades", "REST (Solo GET) + Bearer JWT")
-Rel(inquilino, api_gateway, "Consulta únicamente sus propios contratos de alquiler", "REST (Solo GET) + Bearer JWT")
+Rel(admin, api_gateway, "Opera el sistema", "HTTPS / REST + JWT")
+Rel(propietario, api_gateway, "Consulta su información (solo GET)", "HTTPS / REST + JWT")
+Rel(inquilino, api_gateway, "Consulta su información (solo GET)", "HTTPS / REST + JWT")
+Rel(admin, grafana, "Consulta logs", "HTTP")
 
-' 3. Validación del Gateway con Keycloak y Enrutamiento interno
-Rel(api_gateway, keycloak, "Valida firma del JWT y roles (JWK Set URI)", "HTTPS")
-Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/** y /api/personas/**", "HTTP + TokenRelay")
-Rel(api_gateway, ms_contratos, "Enruta /api/contratos/**", "HTTP + TokenRelay")
+Rel(api_gateway, keycloak, "Obtiene claves públicas para validar tokens", "HTTPS / JWKS")
+Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/~*~* y /api/personas/~*~*", "HTTP / REST + TokenRelay")
+Rel(api_gateway, ms_contratos, "Enruta /api/contratos/~*~* y /api/cuotas/~*~*", "HTTP / REST + TokenRelay")
 
-' 4. Colaboración funcional entre Microservicios
-Rel_R(ms_contratos, ms_catalogo, "1) Valida propiedad DISPONIBLE, solvencia de garante y obtiene propietarioId\n2) Cambia estado a RESERVADA / ALQUILADA / DISPONIBLE", "Spring RestClient / HTTP")
+Rel(ms_contratos, ms_catalogo, "Consulta propiedad y solvencia del garante, cambia estado de ocupación", "HTTP / REST (RestClient)")
+Rel(ms_contratos, keycloak, "Obtiene token de servicio", "OAuth2 Client Credentials")
 
-' 5. Uso del Componente Común (.jar)
-Rel_D(ms_catalogo, commons_jar, "Importa dependencia en pom.xml", "Maven .jar")
-Rel_D(ms_contratos, commons_jar, "Importa dependencia en pom.xml", "Maven .jar")
+Rel(ms_catalogo, db_catalogo, "Lee y escribe", "JPA / JDBC")
+Rel(ms_contratos, db_contratos, "Lee y escribe", "JPA / JDBC")
 
-' 6. Persistencia en Bases de Datos
-Rel_D(ms_catalogo, db_catalogo, "Lee y escribe entidades", "Spring Data JPA / JDBC")
-Rel_D(ms_contratos, db_contratos, "Lee y escribe entidades", "Spring Data JPA / JDBC")
+Rel(ms_catalogo, georef, "Normaliza direcciones", "HTTPS / REST")
+Rel(ms_catalogo, bcra_deudores, "Consulta situación crediticia", "HTTPS / REST")
+Rel(ms_contratos, bcra_estadisticas, "Obtiene valores del ICL", "HTTPS / REST")
 
-' 7. Consumo de APIs Públicas Externas
-Rel(ms_catalogo, api_georef, "Normaliza dirección y obtiene lat/lon en alta de propiedad", "RestClient / HTTPS")
-Rel(ms_catalogo, api_bcra, "Verifica situación crediticia del garante por CUIT", "RestClient / HTTPS")
-Rel(ms_contratos, api_bcra, "Obtiene variación del índice ICL entre fechas para aplicar ajuste", "RestClient / HTTPS")
+Rel(promtail, loki, "Envía logs", "HTTP")
+Rel(grafana, loki, "Consulta logs", "LogQL / HTTP")
 
-' 8. Flujo de Centralización de Logs y Observabilidad (Stack PLG)
-Rel_D(api_gateway, promtail, "Emite logs a stdout", "Docker stdout")
-Rel_D(ms_catalogo, promtail, "Emite logs a stdout", "Docker stdout")
-Rel_D(ms_contratos, promtail, "Emite logs a stdout", "Docker stdout")
-Rel(promtail, loki, "Despacha flujos de logs", "HTTP / Push :3100")
-Rel(grafana, loki, "Consulta logs por labels y X-Correlation-ID", "LogQL :3100")
-Rel(admin, grafana, "Audita logs y trazas de error", "Web UI / HTTP :3000")
-
+SHOW_LEGEND()
 @enduml
 ```
 
