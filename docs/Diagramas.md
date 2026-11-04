@@ -366,6 +366,190 @@ SHOW_LEGEND()
 @enduml
 ```
 
+# Diagrama Entidad-Relación (DER)
+
+![DER - Database per Service](./img/DER.png)
+
+```plantuml
+@startuml DER
+' Diagrama Entidad-Relación - notación pata de gallo (Information Engineering)
+hide circle
+skinparam linetype polyline
+skinparam nodesep 80
+skinparam ranksep 60
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam class {
+    BackgroundColor #FFFFFF
+    BorderColor #2B2D42
+    ArrowColor #2B2D42
+}
+skinparam package {
+    BorderColor #6C757D
+    BackgroundColor #F8F9FA
+}
+
+title DER - Alquileres Roveda SA (Database per Service)
+
+package "catalogo_db (PostgreSQL 16) - administrada por ms-catalogo-inmobiliario" {
+
+    entity "personas" as personas {
+        * id : BIGSERIAL <<PK>>
+        --
+        keycloak_user_id : VARCHAR <<UK>>
+        * cuit_cuil : VARCHAR(11) <<UK>>
+        * nombre : VARCHAR
+        * apellido : VARCHAR
+        email : VARCHAR <<UK>>
+        telefono : VARCHAR
+        ingresos_mensuales_declarados : NUMERIC(15,2)
+        situacion_crediticia_bcra : INTEGER
+        cheques_rechazados : INTEGER
+        fecha_consulta_bcra : TIMESTAMP
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "persona_roles" as persona_roles {
+        * persona_id : BIGINT <<PK, FK>>
+        * rol : VARCHAR(20) <<PK>>
+        --
+        rol IN (PROPIETARIO, INQUILINO, GARANTE)
+    }
+
+    entity "propiedades" as propiedades {
+        * id : BIGSERIAL <<PK>>
+        --
+        * codigo : VARCHAR(20) <<UK>>
+        * tipologia : VARCHAR(30)
+        * calle : VARCHAR
+        * numero : VARCHAR(20)
+        piso : VARCHAR(10)
+        departamento : VARCHAR(10)
+        barrio : VARCHAR
+        * ciudad : VARCHAR(100)
+        * provincia : VARCHAR(100)
+        codigo_postal : VARCHAR(10)
+        direccion_normalizada : VARCHAR
+        latitud : DOUBLE
+        longitud : DOUBLE
+        * superficie_total_m2 : NUMERIC(10,2)
+        superficie_cubierta_m2 : NUMERIC(10,2)
+        precio_sugerido_m2 : NUMERIC(15,2)
+        canon_base_sugerido : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        * version : BIGINT
+        zona_referencia_id : BIGINT <<FK>>
+        * propietario_id : BIGINT <<FK>>
+        inquilino_id : BIGINT <<FK>>
+        garante_id : BIGINT <<FK>>
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "precios_referencia_zona" as zonas {
+        * id : BIGSERIAL <<PK>>
+        --
+        * nombre_zona : VARCHAR(100)
+        * provincia : VARCHAR(100)
+        * ciudad : VARCHAR(100)
+        * provincia_normalizada : VARCHAR(100)
+        * ciudad_normalizada : VARCHAR(100)
+        latitud_centro : DOUBLE
+        longitud_centro : DOUBLE
+        radio_metros : INTEGER
+        * valor_m2 : NUMERIC(15,2)
+        * puntaje_zona : INTEGER
+        * fecha_actualizacion : DATE
+        UK (provincia_normalizada, ciudad_normalizada, nombre_zona)
+    }
+}
+
+package "contratos_db (PostgreSQL 16) - administrada por ms-contratos" {
+
+    entity "contratos" as contratos {
+        * id : BIGSERIAL <<PK>>
+        --
+        * nro_contrato : VARCHAR(20) <<UK>>
+        * propiedad_id : BIGINT <<ref. lógica>>
+        * propietario_id : BIGINT <<ref. lógica>>
+        * inquilino_id : BIGINT <<ref. lógica>>
+        * garante_id : BIGINT <<ref. lógica>>
+        * propietario_keycloak_id : VARCHAR
+        * inquilino_keycloak_id : VARCHAR
+        * fecha_inicio : DATE
+        * fecha_fin : DATE
+        fecha_rescision : DATE
+        * frecuencia_ajuste_meses : INTEGER
+        * monto_inicial : NUMERIC(15,2)
+        * monto_actual : NUMERIC(15,2)
+        * porcentaje_mora_diaria : NUMERIC(7,4)
+        * dia_vencimiento_mes : INTEGER
+        monto_senia : NUMERIC(15,2)
+        fecha_limite_senia : DATE
+        motivo_cancelacion : VARCHAR
+        senia_retenida : BOOLEAN
+        penalizacion_rescision : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        * version : BIGINT
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "ajustes" as ajustes {
+        * id : BIGSERIAL <<PK>>
+        --
+        * contrato_id : BIGINT <<FK>>
+        * fecha_aplicacion : DATE
+        * fecha_indice_desde : DATE
+        * fecha_indice_hasta : DATE
+        * valor_indice_desde : NUMERIC(19,6)
+        * valor_indice_hasta : NUMERIC(19,6)
+        * monto_anterior : NUMERIC(15,2)
+        * monto_nuevo : NUMERIC(15,2)
+        * porcentaje_variacion : NUMERIC(9,4)
+        UK (contrato_id, fecha_indice_hasta)
+    }
+
+    entity "cuotas" as cuotas {
+        * id : BIGSERIAL <<PK>>
+        --
+        * contrato_id : BIGINT <<FK>>
+        ajuste_id : BIGINT <<FK>>
+        * nro_cuota : INTEGER
+        * periodo_mes : INTEGER
+        * periodo_anio : INTEGER
+        * fecha_vencimiento : DATE
+        * monto_base : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        fecha_pago : DATE
+        UK (contrato_id, nro_cuota)
+    }
+
+    entity "indices_icl_cache" as icl {
+        * id : BIGSERIAL <<PK>>
+        --
+        * fecha : DATE <<UK>>
+        * valor : NUMERIC(19,6)
+        * fecha_consulta : TIMESTAMP
+    }
+}
+
+personas ||--|{ persona_roles : "tiene"
+personas ||--o{ propiedades : "es propietario de"
+personas |o--o{ propiedades : "es inquilino de"
+personas |o--o{ propiedades : "es garante de"
+zonas |o--o{ propiedades : "valoriza"
+
+contratos ||--o{ ajustes : "registra"
+contratos ||--o{ cuotas : "genera"
+ajustes |o--o{ cuotas : "origina el lote de"
+
+propiedades .. contratos : "referencia lógica por id\n(sin FK entre bases, se valida vía API)"
+
+@enduml
+```
+
 # Máquina de Estados del Contrato (Patrón State)
 ```plantuml
 @startuml
