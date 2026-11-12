@@ -39,23 +39,30 @@ public class EstadoActivo implements EstadoContrato {
             throw new OperacionInvalidaException("El rango de fechas del índice del ajuste es inválido");
         }
 
-        LocalDate fechaRefAjuste = nuevoAjuste.getFechaAplicacion() != null
-                ? nuevoAjuste.getFechaAplicacion()
-                : nuevoAjuste.getFechaIndiceHasta();
-
-        long mesesDesdeInicio = ChronoUnit.MONTHS.between(contrato.getFechaInicio(), fechaRefAjuste);
-        if (mesesDesdeInicio < contrato.getFrecuenciaAjusteMeses()) {
-            throw new OperacionInvalidaException(String.format(
-                    "No se puede aplicar el ajuste al contrato %s: aún no se cumplió el período mínimo de %d meses",
-                    contrato.getNroContrato(), contrato.getFrecuenciaAjusteMeses()));
-        }
-
         boolean ajusteDuplicado = contrato.getAjustes().stream()
                 .anyMatch(existente -> nuevoAjuste.getFechaIndiceHasta().equals(existente.getFechaIndiceHasta()));
         if (ajusteDuplicado) {
             throw new OperacionInvalidaException(String.format(
                     "Ya existe un ajuste aplicado para la fecha de corte %s en el contrato %s",
                     nuevoAjuste.getFechaIndiceHasta(), contrato.getNroContrato()));
+        }
+
+        LocalDate fechaRefAjuste = nuevoAjuste.getFechaAplicacion() != null
+                ? nuevoAjuste.getFechaAplicacion()
+                : nuevoAjuste.getFechaIndiceHasta();
+
+        LocalDate fechaUltimoHito = contrato.getAjustes().stream()
+                .map(existente -> existente.getFechaAplicacion() != null
+                        ? existente.getFechaAplicacion()
+                        : existente.getFechaIndiceHasta())
+                .max(LocalDate::compareTo)
+                .orElse(contrato.getFechaInicio());
+
+        long mesesDesdeUltimoHito = ChronoUnit.MONTHS.between(fechaUltimoHito, fechaRefAjuste);
+        if (mesesDesdeUltimoHito < contrato.getFrecuenciaAjusteMeses()) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede aplicar el ajuste al contrato %s: aún no se cumplió el período mínimo de %d meses",
+                    contrato.getNroContrato(), contrato.getFrecuenciaAjusteMeses()));
         }
 
         BigDecimal canonActualizado = nuevoAjuste.getMontoNuevo().setScale(2, RoundingMode.HALF_UP);

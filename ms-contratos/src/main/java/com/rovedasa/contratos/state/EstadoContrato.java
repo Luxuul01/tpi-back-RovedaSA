@@ -20,30 +20,30 @@ public interface EstadoContrato {
     EstadoContratoEnum getTipoEstado();
 
     default void seniar(Contrato contrato, BigDecimal montoSenia, LocalDate fechaLimiteSenia, LocalDate fechaActual) {
-        throw OperacionNoPermitida("registrar una seña", contrato);
+        throw operacionNoPermitida("registrar una seña", contrato);
     }
 
     default List<Cuota> activar(Contrato contrato, LocalDate fechaActual) {
-        throw OperacionNoPermitida("activar el contrato", contrato);
+        throw operacionNoPermitida("activar el contrato", contrato);
     }
 
     default void cancelar(Contrato contrato, String motivo, boolean retenerSenia) {
-        throw OperacionNoPermitida("cancelar el contrato", contrato);
+        throw operacionNoPermitida("cancelar el contrato", contrato);
     }
 
     default List<Cuota> aplicarAjuste(Contrato contrato, Ajuste nuevoAjuste) {
-        throw OperacionNoPermitida("aplicar un ajuste de canon", contrato);
+        throw operacionNoPermitida("aplicar un ajuste de canon", contrato);
     }
 
     default BigDecimal rescindir(Contrato contrato, LocalDate fechaRescision) {
-        throw OperacionNoPermitida("rescindir el contrato", contrato);
+        throw operacionNoPermitida("rescindir el contrato", contrato);
     }
 
     default void finalizar(Contrato contrato, LocalDate fechaActual) {
-        throw OperacionNoPermitida("finalizar el contrato", contrato);
+        throw operacionNoPermitida("finalizar el contrato", contrato);
     }
 
-    private OperacionInvalidaException OperacionNoPermitida(String accion, Contrato contrato) {
+    private OperacionInvalidaException operacionNoPermitida(String accion, Contrato contrato) {
         String codigo = contrato != null && contrato.getNroContrato() != null
                 ? contrato.getNroContrato()
                 : "sin-codigo";

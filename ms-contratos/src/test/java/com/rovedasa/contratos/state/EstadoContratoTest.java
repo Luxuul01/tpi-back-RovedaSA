@@ -251,6 +251,92 @@ class EstadoContratoTest {
         assertFalse(contratoBase.getSeniaRetenida());
     }
 
+    @Test
+    @DisplayName("ACTIVO: rechaza un segundo ajuste cuando aún no transcurrió la frecuencia mínima desde el ajuste anterior")
+    void debeRechazarSegundoAjustePrematuro() {
+        activarContratoDePrueba();
+        EstadoContrato estadoActivo = factory.obtenerEstado(contratoBase);
+
+        Ajuste primerAjuste = Ajuste.builder()
+                .tipoIndice(TipoIndiceEnum.ICL)
+                .fechaAplicacion(LocalDate.of(2026, 10, 1))
+                .fechaIndiceDesde(LocalDate.of(2026, 7, 1))
+                .fechaIndiceHasta(LocalDate.of(2026, 10, 1))
+                .valorIndiceDesde(new BigDecimal("10.000000"))
+                .valorIndiceHasta(new BigDecimal("12.500000"))
+                .coeficiente(new BigDecimal("1.250000"))
+                .montoAnterior(new BigDecimal("500000.00"))
+                .montoNuevo(new BigDecimal("625000.00"))
+                .porcentajeVariacion(new BigDecimal("25.0000"))
+                .origen(OrigenDatoEnum.BCRA)
+                .build();
+        estadoActivo.aplicarAjuste(contratoBase, primerAjuste);
+
+        Ajuste segundoAjustePrematuro = Ajuste.builder()
+                .tipoIndice(TipoIndiceEnum.ICL)
+                .fechaAplicacion(LocalDate.of(2026, 11, 1))
+                .fechaIndiceDesde(LocalDate.of(2026, 10, 1))
+                .fechaIndiceHasta(LocalDate.of(2026, 11, 1))
+                .valorIndiceDesde(new BigDecimal("12.500000"))
+                .valorIndiceHasta(new BigDecimal("13.000000"))
+                .coeficiente(new BigDecimal("1.040000"))
+                .montoAnterior(new BigDecimal("625000.00"))
+                .montoNuevo(new BigDecimal("650000.00"))
+                .porcentajeVariacion(new BigDecimal("4.0000"))
+                .origen(OrigenDatoEnum.BCRA)
+                .build();
+
+        assertThrows(OperacionInvalidaException.class,
+                () -> estadoActivo.aplicarAjuste(contratoBase, segundoAjustePrematuro));
+        assertEquals(1, contratoBase.getAjustes().size());
+        assertEquals(6, contratoBase.getCuotas().size());
+    }
+
+    @Test
+    @DisplayName("ACTIVO: permite un segundo ajuste al cumplirse otro período de frecuencia y emite cuotas 7, 8 y 9")
+    void debePermitirSegundoAjusteCumplidoElSiguientePeriodo() {
+        activarContratoDePrueba();
+        EstadoContrato estadoActivo = factory.obtenerEstado(contratoBase);
+
+        Ajuste primerAjuste = Ajuste.builder()
+                .tipoIndice(TipoIndiceEnum.ICL)
+                .fechaAplicacion(LocalDate.of(2026, 10, 1))
+                .fechaIndiceDesde(LocalDate.of(2026, 7, 1))
+                .fechaIndiceHasta(LocalDate.of(2026, 10, 1))
+                .valorIndiceDesde(new BigDecimal("10.000000"))
+                .valorIndiceHasta(new BigDecimal("12.500000"))
+                .coeficiente(new BigDecimal("1.250000"))
+                .montoAnterior(new BigDecimal("500000.00"))
+                .montoNuevo(new BigDecimal("625000.00"))
+                .porcentajeVariacion(new BigDecimal("25.0000"))
+                .origen(OrigenDatoEnum.BCRA)
+                .build();
+        estadoActivo.aplicarAjuste(contratoBase, primerAjuste);
+
+        Ajuste segundoAjuste = Ajuste.builder()
+                .tipoIndice(TipoIndiceEnum.ICL)
+                .fechaAplicacion(LocalDate.of(2027, 1, 1))
+                .fechaIndiceDesde(LocalDate.of(2026, 10, 1))
+                .fechaIndiceHasta(LocalDate.of(2027, 1, 1))
+                .valorIndiceDesde(new BigDecimal("12.500000"))
+                .valorIndiceHasta(new BigDecimal("15.000000"))
+                .coeficiente(new BigDecimal("1.200000"))
+                .montoAnterior(new BigDecimal("625000.00"))
+                .montoNuevo(new BigDecimal("750000.00"))
+                .porcentajeVariacion(new BigDecimal("20.0000"))
+                .origen(OrigenDatoEnum.BCRA)
+                .build();
+
+        List<Cuota> nuevasCuotas = estadoActivo.aplicarAjuste(contratoBase, segundoAjuste);
+
+        assertEquals(new BigDecimal("750000.00"), contratoBase.getMontoActual());
+        assertEquals(2, contratoBase.getAjustes().size());
+        assertEquals(3, nuevasCuotas.size());
+        assertEquals(9, contratoBase.getCuotas().size());
+        assertEquals(7, nuevasCuotas.get(0).getNroCuota());
+        assertEquals(LocalDate.of(2027, 1, 10), nuevasCuotas.get(0).getFechaVencimiento());
+    }
+
     private void activarContratoDePrueba() {
         factory.obtenerEstado(contratoBase).seniar(
                 contratoBase, new BigDecimal("150000.00"), LocalDate.of(2026, 6, 25), LocalDate.of(2026, 6, 20));
