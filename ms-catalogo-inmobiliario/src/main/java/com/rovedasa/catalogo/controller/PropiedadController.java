@@ -1,12 +1,18 @@
 package com.rovedasa.catalogo.controller;
 
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
+import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.service.PropiedadService;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
+import com.rovedasa.commons.exception.ApiError;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +28,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -71,6 +78,33 @@ public class PropiedadController {
     @PreAuthorize("hasRole('PROPIETARIO')")
     public List<PropiedadResponse> listarPropias(@AuthenticationPrincipal Jwt jwt) {
         return propiedadService.listarPropias(jwt.getSubject());
+    }
+
+    // F-06. Solo ADMINISTRADOR (heredado del @PreAuthorize de la clase)
+    @Operation(summary = "Modificar los datos descriptivos de una propiedad",
+            description = "Reemplaza tipología, dirección y superficies. Solo para propiedades DISPONIBLE o INACTIVA. "
+                    + "Si cambia la dirección se vuelve a normalizar con GeoRef; siempre se vuelve a tasar. "
+                    + "El propietario no se puede cambiar.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Propiedad modificada y tasada de nuevo"),
+            @ApiResponse(responseCode = "400", description = "Datos inválidos, dirección que GeoRef no encuentra, "
+                    + "o propiedad RESERVADA o ALQUILADA (hay un contrato que la referencia)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad cambió mientras se modificaba (control de versión)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "503", description = "GeoRef no está disponible",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PutMapping("/{id}")
+    public PropiedadResponse modificar(@PathVariable("id") Long id,
+            @Valid @RequestBody ModificarPropiedadRequest solicitud) {
+        return propiedadService.modificar(id, solicitud);
     }
 
     // Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)

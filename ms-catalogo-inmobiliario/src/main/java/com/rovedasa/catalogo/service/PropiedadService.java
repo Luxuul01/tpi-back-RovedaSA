@@ -3,6 +3,7 @@ package com.rovedasa.catalogo.service;
 import com.rovedasa.catalogo.client.georef.DireccionNormalizada;
 import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
+import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.mapper.PropiedadMapper;
 import com.rovedasa.catalogo.model.Persona;
@@ -29,7 +30,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Alta, consulta y cambios de estado de propiedades (CU-01 y CU-08).
+ * Alta, consulta, modificación, baja lógica y cambios de estado de propiedades (CU-01, CU-08 y F-06).
  */
 @Slf4j
 @Service
@@ -39,7 +40,7 @@ public class PropiedadService {
     private final PersonaRepository personaRepository;
     private final GeoRefClient geoRefClient;
     private final TasacionService tasacionService;
-    // registrar() maneja sus transacciones a mano para no tener una conexión tomada durante la llamada a GeoRef
+    // registrar() y modificar() manejan sus transacciones a mano para no tener una conexión tomada durante GeoRef
     private final TransactionTemplate transaccionLectura;
     private final TransactionTemplate transaccionEscritura;
 
@@ -104,6 +105,54 @@ public class PropiedadService {
                 guardada.getId(), tasacion.tieneCobertura() ? tasacion.zona().getNombreZona() : "sin cobertura",
                 guardada.getCanonBaseSugerido());
         return PropiedadMapper.aResponse(guardada);
+    }
+
+    /**
+     * Modificación de los datos descriptivos (F-06). Solo DISPONIBLE o INACTIVA (lo valida la entidad).
+     *
+     * Mismo esquema de transacciones que registrar(), por el mismo motivo (GeoRef puede tardar segundos):
+     *   1. Lectura: buscar la propiedad.
+     *   2. Fuera de toda transacción: aplicar los cambios; si cambió la dirección, normalizar con GeoRef;
+     *      tasar siempre, con las coordenadas que corresponda (las nuevas o las que ya tenía).
+     *   3. Escritura: guardar y armar la respuesta.
+     * La propiedad llega al paso 3 "detached", así que save() hace merge: si mientras tanto alguien la cambió
+     * (por ejemplo ms-contratos la reservó), el @Version no coincide y el merge falla con 409. La respuesta se
+     * arma dentro de esa transacción porque el propietario es LAZY y su proxy no se puede inicializar fuera.
+     */
+    public PropiedadResponse modificar(Long id, ModificarPropiedadRequest solicitud) {
+        // 1. Transacción corta de lectura
+        Propiedad propiedad = transaccionLectura.execute(estado -> buscar(id));
+
+        // 2. La entidad rechaza RESERVADA/ALQUILADA antes de tocar nada (y antes de llamar a GeoRef)
+        propiedad.actualizarDatosDescriptivos(
+                solicitud.tipologia(),
+                solicitud.calle().trim(),
+                solicitud.numero().trim(),
+                NormalizadorTexto.limpiarOpcional(solicitud.piso()),
+                NormalizadorTexto.limpiarOpcional(solicitud.departamento()),
+                NormalizadorTexto.limpiarOpcional(solicitud.barrio()),
+                NormalizadorTexto.limpiarOpcional(solicitud.codigoPostal()),
+                solicitud.ciudad().trim(),
+                solicitud.provincia().trim(),
+                solicitud.superficieTotalM2(),
+                solicitud.superficieCubiertaM2());
+
+        // Si cambió la dirección, la entidad descartó la normalización anterior
+        boolean renormalizada = !propiedad.estaNormalizada();
+        if (renormalizada) {
+            normalizarDireccion(propiedad);
+        }
+        Tasacion tasacion = tasar(propiedad);
+
+        // 3. Transacción corta de escritura
+        PropiedadResponse respuesta = transaccionEscritura.execute(
+                estado -> PropiedadMapper.aResponse(propiedadRepository.save(propiedad)));
+
+        log.info("Propiedad {} (ID: {}) modificada{}; zona {} y canon sugerido {}", respuesta.codigo(), id,
+                renormalizada ? " con dirección nueva normalizada por GeoRef" : " sin cambio de dirección",
+                tasacion.tieneCobertura() ? tasacion.zona().getNombreZona() : "sin cobertura",
+                respuesta.canonBaseSugerido());
+        return respuesta;
     }
 
     @Transactional(readOnly = true)
