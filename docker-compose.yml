@@ -75,7 +75,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./logs/catalogo:/app/logs
+      - logs_catalogo:/app/logs
     networks:
       - tpi-network
     depends_on:
@@ -101,7 +101,7 @@ services:
     ports:
       - "8082:8082"
     volumes:
-      - ./logs/contratos:/app/logs
+      - logs_contratos:/app/logs
     networks:
       - tpi-network
     depends_on:
@@ -129,7 +129,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./logs/gateway:/app/logs
+      - logs_gateway:/app/logs
     networks:
       - tpi-network
     depends_on:
@@ -195,6 +195,9 @@ services:
 volumes:
   pgdata_catalogo:
   pgdata_contratos:
+  logs_catalogo:
+  logs_contratos:
+  logs_gateway:
   loki_data:
   grafana_data:
 
