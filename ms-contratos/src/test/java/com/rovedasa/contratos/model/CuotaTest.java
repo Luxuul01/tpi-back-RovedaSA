@@ -1,7 +1,7 @@
 package com.rovedasa.contratos.model;
 
-import com.rovedasa.commons.enums.EstadoContratoEnum;
-import com.rovedasa.commons.enums.EstadoCuotaEnum;
+import com.rovedasa.contratos.model.EstadoContratoEnum;
+import com.rovedasa.contratos.model.EstadoCuotaEnum;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

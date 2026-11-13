@@ -442,7 +442,7 @@ Estado al 03/11/2026. Ir tachando a medida que se resuelven.
 - [ ] Cuota con estado `PAGADA` y `fecha_pago`, y `PATCH /api/cuotas/{id}/pago`.
 - [ ] Inyectar `java.time.Clock` (no usar `LocalDate.now()` directo).
 - [ ] Compensación si falla el guardado local después de llamar al catálogo.
-- [ ] Mover `EstadoContratoEnum`, `EstadoCuotaEnum` y `CuotaResumenDTO` de commons a ms-contratos, y agregar `PAGADA` a `EstadoCuotaEnum`.
+- [x] Mover `EstadoContratoEnum`, `EstadoCuotaEnum` y `CuotaResumenDTO` de commons a ms-contratos, y agregar `PAGADA` a `EstadoCuotaEnum`.
 - [ ] Sugerencia de división (no acordada): Dev 3 se ocupa de Contrato, el patrón State, las transiciones y la integración con el catálogo. Esteban se ocupa de Cuota (generación, mora, pago y anulación), las consultas filtradas por rol y el `Clock`.
 
 ### BCRA, ICL y QA (Dev 4)

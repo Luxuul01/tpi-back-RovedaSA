@@ -1,6 +1,5 @@
 package com.rovedasa.contratos.model;
 
-import com.rovedasa.commons.enums.EstadoCuotaEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

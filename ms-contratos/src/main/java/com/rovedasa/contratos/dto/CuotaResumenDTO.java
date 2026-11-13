@@ -1,6 +1,6 @@
-package com.rovedasa.commons.dto;
+package com.rovedasa.contratos.dto;
 
-import com.rovedasa.commons.enums.EstadoCuotaEnum;
+import com.rovedasa.contratos.model.EstadoCuotaEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
