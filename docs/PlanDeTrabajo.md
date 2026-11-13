@@ -1,5 +1,8 @@
-# Plan de Trabajo y Organización del Equipo (4 Integrantes)
+# Plan de Trabajo y Organización del Equipo (5 Integrantes)
 ### Trabajo Práctico Integrador — Backend de Aplicaciones 2026 (UTN FRC)
+
+> [!IMPORTANT] Alcance comprometido
+> Lo que el equipo se comprometió a entregar está en [Alcance](./Alcance.md). Si este plan lo contradice, prevalece el Alcance.
 
 > [!TIP] Centro de Estudio Teórico y Tareas del Tech Lead
 > - Consultá el índice maestro y las notas atómicas de estudio en: [[00 - Mapa de Estudio y Guía Tech Lead]]
@@ -26,10 +29,12 @@
 │ (Inmuebles, Personas, GeoRef AR)  │ (Contratos, Seña, Estados, Reglas) │
 ├───────────────────────────────────┴────────────────────────────────────┤
 │ DEV 4: Integración BCRA, Resiliencia ICL y QA/Demo (Postman/E2E)       │
+├────────────────────────────────────────────────────────────────────────┤
+│ DEV 5: ms-contratos junto a DEV 3 (división de tareas a definir)       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 👤 Integrante 1: Tech Lead, Infraestructura & API Gateway
+### 👤 Integrante 1 — Luciano Agüero: Tech Lead, Infraestructura & API Gateway
 *Garantiza que el ecosistema compile, corra en contenedores y filtre la seguridad perimetral.*
 
 * **Módulos bajo su responsabilidad:**
@@ -49,7 +54,7 @@
 
 ---
 
-### 👤 Integrante 2: Responsable de Catálogo Inmobiliario & GeoRef AR
+### 👤 Integrante 2 — Levi Angelino: Responsable de Catálogo Inmobiliario & GeoRef AR
 *Gobierna la oferta inmobiliaria, los actores del sistema y la geolocalización.*
 
 * **Módulos bajo su responsabilidad:**
@@ -64,13 +69,17 @@
   * Controladores y Endpoints REST:
     * `POST /api/propiedades` (Alta con llamada sincrónica a GeoRef).
     * `POST /api/personas` (Alta de personas vinculadas a su `keycloakUserId`).
-    * `GET /api/propiedades/propias` (Consulta restringida para rol `PROPIETARIO` mediante filtro de repositorio `findByPropietarioId` usando el claim `sub` del JWT).
+    * `GET /api/propiedades/propias` (Consulta restringida para rol `PROPIETARIO` mediante filtro de repositorio `findByPropietario_KeycloakUserId` usando el claim `sub` del JWT).
     * `PATCH /api/propiedades/{id}/estado` (Endpoint interno protegido para conmutar estado a `RESERVADA`, `ALQUILADA` o `DISPONIBLE`, invocado por contratos).
+    * `GET /api/personas`, `GET /api/personas/{id}` y `PATCH /api/personas/{id}/roles` (consulta y gestión de roles).
+    * `POST /api/personas/{id}/evaluacion-solvencia` (evaluación del garante en BCRA Central de Deudores, con el cliente que provee el Integrante 4).
+    * `GET /api/propiedades`, `GET /api/propiedades/{id}`, `PUT /api/propiedades/{id}` y `PATCH /api/propiedades/{id}/baja` (consulta, modificación y baja lógica a `INACTIVA`).
+  * Detalle completo de endpoints y seguridad: [Alcance §7](./Alcance.md#7-arquitectura-apis).
 * **Tema para su Defensa Oral:** Modelo relacional de catálogo, consumo desacoplado de APIs públicas geográficas (GeoRef) y filtro de seguridad en capa de repositorio para Propietarios.
 
 ---
 
-### 👤 Integrante 3: Responsable de Contratos & Patrón State (Núcleo de Negocio)
+### 👤 Integrante 3 — Santino Brenna: Responsable de Contratos & Patrón State (Núcleo de Negocio)
 *Gobierna el ciclo de vida legal y financiero de los alquileres y la colaboración inter-servicio.*
 
 * **Módulos bajo su responsabilidad:**
@@ -82,7 +91,7 @@
     * Interfaz común `EstadoContrato` y clases concretas de estado (`Creado`, `Senado`, `Activo`, `Cancelado`, `Rescindido`, `Finalizado`).
     * Implementación de guardas e invariantes legales de cada estado.
     * Lógica de seña y reserva: congelamiento de la propiedad y fecha límite.
-    * Lógica de rescisión anticipada: cálculo matemático de penalización indemnizatoria (1.5 meses si tiempo < 6 meses, 1 mes si tiempo > 6 meses).
+    * Lógica de rescisión anticipada: cálculo matemático de penalización indemnizatoria (1,5 cánones vigentes si pasaron menos de 6 meses desde el inicio, 1 canon si pasaron 6 o más).
   * Colaboración inter-servicio hacia `ms-catalogo`:
     * Implementar cliente `RestClient` interno para consultar disponibilidad del bien y ordenar la conmutación a `RESERVADA`, `ALQUILADA` o `DISPONIBLE`.
   * Controladores y Endpoints REST:
@@ -91,13 +100,14 @@
     * `POST /api/contratos/{id}/activar` (Transición a `Activo` con verificación de garantías y cancelación de borradores competidores).
     * `POST /api/contratos/{id}/cancelar` (Cancelación de seña y liberación del bien a `DISPONIBLE`).
     * `POST /api/contratos/{id}/rescindir` y `/finalizar`.
-    * `GET /api/contratos/mis-contratos` (Filtro estricto por `sub` para `INQUILINO`).
-    * `GET /api/contratos/propietario` (Filtro estricto por `sub` para `PROPIETARIO`).
+    * `GET /api/contratos` (listado único filtrado según el rol: todos para `ADMINISTRADOR`, los de sus propiedades para `PROPIETARIO` y los propios para `INQUILINO`, siempre por el `sub` del token).
+    * `GET /api/contratos/{id}` (404 si el recurso es ajeno).
+  * Coordinación con el Integrante 5: la división de tareas dentro de `ms-contratos` está a definir. Ver [Alcance §15](./Alcance.md#15-pendientes-para-cumplir-el-alcance).
 * **Tema para su Defensa Oral:** Implementación del patrón State en JPA, transaccionalidad inter-servicio y reglas de negocio del ciclo de vida contractual.
 
 ---
 
-### 👤 Integrante 4: Responsable de Integraciones BCRA, Resiliencia ICL y QA/Demo
+### 👤 Integrante 4 — Lautaro Roveda: Responsable de Integraciones BCRA, Resiliencia ICL y QA/Demo
 *Garantiza la inteligencia financiera, la tolerancia a fallos ante el Banco Central y la defensa del proyecto.*
 
 * **Módulos bajo su responsabilidad:**
@@ -117,6 +127,17 @@
     * Colección completa y documentada en **Postman o Bruno** con variables de entorno (`baseUrl`, `tokenAdmin`, `tokenInquilino`, `tokenPropietario`), scripts de tests automáticos (`pm.test`) y flujo continuo de punta a punta.
     * Verificación de especificaciones OpenAPI / Swagger UI en cada microservicio.
 * **Tema para su Defensa Oral:** Estrategia de resiliencia ante contingencias de APIs externas (BCRA), cálculo del índice ICL y orquestación de la demostración en vivo.
+
+---
+
+### 👤 Integrante 5 — Esteban: Contratos (junto al Integrante 3)
+*Se incorporó al equipo durante el proyecto.*
+
+* **Módulos bajo su responsabilidad:**
+  * Microservicio `ms-contratos`, compartido con el Integrante 3.
+* **Entregables y Tareas Técnicas:**
+  * **A definir con el Integrante 3.** Pendientes de `ms-contratos` a repartir: cuotas (generación, mora, registro de pago y anulación), consultas filtradas por rol, `Clock` inyectable, compensación ante fallas en la llamada al catálogo y copia de los `keycloakUserId` en el contrato. Detalle en [Alcance §15](./Alcance.md#15-pendientes-para-cumplir-el-alcance).
+* **Tema para su Defensa Oral:** A definir según la división de tareas.
 
 ---
 
@@ -151,7 +172,7 @@ flowchart TD
 
 ## 4. Flujo de Trabajo en GitHub (Estrategia Anti-Conflictos)
 
-Para que 4 desarrolladores trabajen en simultáneo sobre el mismo repositorio sin pisarse el código ni sufrir el "infierno de merge conflicts", el equipo implementará un flujo de trabajo disciplinado pero ágil basado en **GitHub Flow con rama de integración**.
+Para que 5 desarrolladores trabajen en simultáneo sobre el mismo repositorio sin pisarse el código ni sufrir el "infierno de merge conflicts", el equipo implementará un flujo de trabajo disciplinado pero ágil basado en **GitHub Flow con rama de integración**.
 
 ---
 
@@ -190,7 +211,7 @@ gitGraph
   * Solo recibe código probado y validado proveniente de `develop` mediante Pull Request al cerrar un hito de entrega.
   * Código en `main` debe compilar al 100%, pasar todos los tests y levantar sin errores con `docker compose up --build`.
 * **`develop` (Rama de Integración Continua)**:
-  * Rama base sobre la cual convergen los desarrollos de los 4 integrantes.
+  * Rama base sobre la cual convergen los desarrollos de los 5 integrantes.
   * Cada nuevo feature se desprende de `develop` y se fusiona a `develop` mediante PR.
 * **`feature/<modulo>-<descripcion>` (Ramas de Trabajo Personal)**:
   * Nomenclatura obligatoria:
@@ -210,7 +231,7 @@ La mejor defensa contra los conflictos de Git no es el software, es la **estruct
 | :--- | :--- | :--- |
 | **Dev 1** | `/api-gateway` y `/docker-compose.yml` | Solo Dev 1 modifica estos archivos. |
 | **Dev 2** | `/ms-catalogo-inmobiliario` | Solo Dev 2 modifica estos archivos. |
-| **Dev 3** | `/ms-contratos` | Solo Dev 3 modifica estos archivos. |
+| **Dev 3** y **Dev 5** | `/ms-contratos` | Solo Dev 3 y Dev 5 modifican estos archivos. Se reparten por paquete o clase para no editar los mismos archivos en paralelo. |
 | **Dev 4** | `/ms-contratos/client/bcra` y `/ms-catalogo/client/bcra` | Agrega sus clientes desacoplados en sub-paquetes `client`. |
 | **TODOS** | `/inmobiliaria-commons` | **MÓDULO COMPARTIDO.** Aplica el protocolo estricto "Commons First". |
 
@@ -228,17 +249,17 @@ El único punto de posible conflicto es el módulo compartido `inmobiliaria-comm
 2. **PR Rápido e Independiente de Commons**:
    * Dev 3 crea una rama rápida: `git checkout -b feature/commons-dto-propiedad`.
    * Agrega el atributo en la clase DTO en `inmobiliaria-commons`.
-   * Verifica compilación local: `mvn clean install -pl inmobiliaria-commons`.
+   * Verifica compilación local: `./mvnw clean install -pl inmobiliaria-commons`.
    * Abre PR directo a `develop`: *"feat(commons): agregar estadoPropiedad a PropiedadDTO"*.
 3. **Aprobación Express y Rebase General**:
    * Dev 1 (o Dev 2) aprueba el PR en GitHub y se mergea a `develop`.
-   * Los 4 integrantes ejecutan en sus ramas locales:
+   * Los 5 integrantes ejecutan en sus ramas locales:
      ```bash
      git checkout develop
      git pull origin develop
      git checkout feature/mi-rama
      git merge develop
-     mvn clean install
+     ./mvnw clean install
      ```
    * Ahora todos tienen la última versión del DTO disponible sin bloquearse.
 
@@ -260,7 +281,7 @@ git checkout feature/mi-rama
 git merge develop
 
 # 4. Asegurar que todo el backend compila con los cambios de los demás
-mvn clean compile
+./mvnw clean compile
 ```
 
 Si haces esto todos los días, nunca tendrás un conflicto de más de 2 líneas de código.
@@ -272,7 +293,7 @@ Si haces esto todos los días, nunca tendrás un conflicto de más de 2 líneas 
 Para que un integrante pueda fusionar su rama a `develop`, debe cumplir estrictamente con el siguiente checklist:
 
 #### Checklist Pre-PR (Local en tu máquina):
-- [ ] Compilación exitosa desde la raíz del proyecto: `mvn clean install` sin errores en ninguno de los módulos.
+- [ ] Compilación exitosa desde la raíz del proyecto: `./mvnw clean install` sin errores en ninguno de los módulos.
 - [ ] Los tests unitarios y de integración locales pasan (`BUILD SUCCESS`).
 - [ ] No se suben archivos basura (`target/`, `.idea/`, `.vscode/`, `.env`, logs). El `.gitignore` debe estar limpio.
 - [ ] Si se modificó la configuración de Docker, `docker compose up --build` levanta el servicio sin crashear.
@@ -295,7 +316,7 @@ Para blindar el repositorio y que nadie pueda romper `develop` aunque se equivoq
 * **Cuándo se ejecuta:** En cada Pull Request que apunte a `develop` o `main`.
 * **Qué hace automáticamente:**
   1. Levanta un runner con Ubuntu y Java 21 Temurin.
-  2. Ejecuta `mvn clean verify`.
+  2. Ejecuta `./mvnw clean verify`.
   3. Si algún microservicio no compila o falla un test, **marca el PR con una cruz roja y bloquea el botón de Merge**.
 * **Beneficio:** Imposibilita que código roto llegue a `develop`.
 
@@ -354,5 +375,6 @@ Para mantener una observabilidad profesional y consistente en todos los microser
 
 ## 5. Documentos Relacionados
 
+* Alcance comprometido con la cátedra (fuente de verdad): [Alcance](./Alcance.md)
 * Especificación del Negocio y Casos de Uso: [[Dominio]]
 * Diagramas C4 y Máquina de Estados: [[Diagramas]]
