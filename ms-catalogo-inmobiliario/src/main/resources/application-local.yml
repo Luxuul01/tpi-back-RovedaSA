@@ -1,4 +1,6 @@
-# Perfil local: la seguridad queda desactivada (ver SecurityConfig) para probar sin token de Keycloak
+# Perfil local: solo baja el nivel de log de seguridad. La seguridad es la misma que en los demás perfiles
+# (ver SecurityConfig): solo Swagger/OpenAPI (/v3/api-docs/**, /swagger-ui/**) y /actuator/health son públicos;
+# el resto exige un JWT de Keycloak, y POST/PUT/PATCH/DELETE sobre /api/** exigen además el rol ADMINISTRADOR.
 logging:
   level:
     org.springframework.security: INFO

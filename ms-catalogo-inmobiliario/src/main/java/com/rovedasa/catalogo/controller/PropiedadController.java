@@ -1,13 +1,18 @@
 package com.rovedasa.catalogo.controller;
 
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
+import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
-import com.rovedasa.catalogo.exception.AutenticacionRequeridaException;
 import com.rovedasa.catalogo.service.PropiedadService;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
+import com.rovedasa.commons.exception.ApiError;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,7 +38,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
-@Tag(name = "Propiedades", description = "Alta, consulta y cambios de estado de inmuebles")
+@Tag(name = "Propiedades", description = "Alta, consulta, modificación, baja lógica y cambios de estado de inmuebles")
 @RestController
 @RequestMapping("/api/propiedades")
 @PreAuthorize("hasRole('ADMINISTRADOR')")
@@ -65,19 +71,65 @@ public class PropiedadController {
         return propiedadService.obtener(id);
     }
 
-    // CU-08: la identidad sale del claim sub del JWT validado; nunca se acepta el id del propietario por parámetro
+    // CU-08: la identidad sale del claim sub del JWT validado; nunca se acepta el id del propietario por parámetro.
+    // Sin propiedades devuelve [] (200), no 404. El @PreAuthorize del método reemplaza al de la clase.
     @Operation(summary = "Listar las propiedades del propietario autenticado")
     @GetMapping("/propias")
     @PreAuthorize("hasRole('PROPIETARIO')")
     public List<PropiedadResponse> listarPropias(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            throw new AutenticacionRequeridaException(
-                    "Este endpoint requiere un token JWT; no está disponible en el perfil local");
-        }
         return propiedadService.listarPropias(jwt.getSubject());
     }
 
-    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler, liberación, baja o reactivación)")
+    // F-06. Solo ADMINISTRADOR (heredado del @PreAuthorize de la clase)
+    @Operation(summary = "Modificar los datos descriptivos de una propiedad",
+            description = "Reemplaza tipología, dirección y superficies. Solo para propiedades DISPONIBLE o INACTIVA. "
+                    + "Si cambia la dirección se vuelve a normalizar con GeoRef; siempre se vuelve a tasar. "
+                    + "El propietario no se puede cambiar.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Propiedad modificada y tasada de nuevo"),
+            @ApiResponse(responseCode = "400", description = "Datos inválidos, dirección que GeoRef no encuentra, "
+                    + "o propiedad RESERVADA o ALQUILADA (hay un contrato que la referencia)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad cambió mientras se modificaba (control de versión)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "503", description = "GeoRef no está disponible",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PutMapping("/{id}")
+    public PropiedadResponse modificar(@PathVariable("id") Long id,
+            @Valid @RequestBody ModificarPropiedadRequest solicitud) {
+        return propiedadService.modificar(id, solicitud);
+    }
+
+    // F-06. Solo ADMINISTRADOR (heredado del @PreAuthorize de la clase). No hay endpoint de reactivación.
+    @Operation(summary = "Dar de baja lógica una propiedad disponible",
+            description = "La propiedad pasa de DISPONIBLE a INACTIVA. No se borra: queda en el histórico.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Propiedad en estado INACTIVA"),
+            @ApiResponse(responseCode = "400", description = "La propiedad no está DISPONIBLE",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad cambió al mismo tiempo (control de versión)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PatchMapping("/{id}/baja")
+    public PropiedadResponse darDeBaja(@PathVariable("id") Long id) {
+        return propiedadService.darDeBaja(id);
+    }
+
+    // Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)
+    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler o liberación)")
     @PatchMapping("/{id}/estado")
     public PropiedadDTO actualizarEstado(@PathVariable("id") Long id,
             @Valid @RequestBody ActualizarEstadoPropiedadDTO solicitud) {

@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -37,9 +38,11 @@ import java.util.stream.Collectors;
 /**
  * Manejo de errores propio del catálogo. Existe porque el GlobalExceptionHandler de commons solo conoce
  * 400 (validación y OperacionInvalida) y 404, y todo lo demás termina en su handler genérico como 500:
- * duplicados, conflictos de concurrencia, GeoRef caído, accesos denegados, JSON mal formado, etc.
+ * duplicados, conflictos de concurrencia, GeoRef o BCRA caídos, accesos denegados, JSON mal formado, etc.
  * Corre ANTES que el de commons (HIGHEST_PRECEDENCE) y no maneja Exception genérica, así que lo que no
  * resuelve acá sigue cayendo en commons. Devuelve el mismo ApiError.
+ * Es el único @RestControllerAdvice del módulo: un segundo advice con la misma prioridad haría que el
+ * orden entre ambos (y por lo tanto el formato de la respuesta) quede sin definir.
  * TODO: debería migrar a inmobiliaria-commons para que ms-contratos tenga las mismas respuestas.
  */
 @Slf4j
@@ -49,6 +52,8 @@ public class CatalogoExceptionHandler {
 
     private static final String MENSAJE_CONFLICTO =
             "La operación entra en conflicto con el estado actual del recurso; reintentá";
+    private static final String MENSAJE_NO_AUTENTICADO =
+            "Se requiere un token de acceso válido para acceder a este recurso";
 
     // 409: el recurso ya existe (mensaje de negocio, se puede mostrar)
     @ExceptionHandler(RecursoDuplicadoException.class)
@@ -64,10 +69,10 @@ public class CatalogoExceptionHandler {
         return responder(HttpStatus.CONFLICT, MENSAJE_CONFLICTO, request);
     }
 
-    // 503: GeoRef no responde o devolvió un error
-    @ExceptionHandler(ServicioExternoNoDisponibleException.class)
-    public ResponseEntity<ApiError> manejarServicioExterno(ServicioExternoNoDisponibleException ex,
-            HttpServletRequest request) {
+    // 503: GeoRef o la Central de Deudores del BCRA no responden o devolvieron un error.
+    // El mensaje de ambas excepciones es de negocio (no expone la causa técnica), así que se puede mostrar.
+    @ExceptionHandler({ServicioExternoNoDisponibleException.class, BcraNoDisponibleException.class})
+    public ResponseEntity<ApiError> manejarServicioExterno(RuntimeException ex, HttpServletRequest request) {
         log.warn("Servicio externo no disponible: {}", ex.getMessage());
         return responder(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
@@ -85,6 +90,14 @@ public class CatalogoExceptionHandler {
             HttpServletRequest request) {
         log.warn("Autenticación requerida en {}: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
+    }
+
+    // 401: sin token, token inválido o vencido. Llega desde la cadena de filtros (ver SecurityConfig).
+    // El detalle (firma inválida, token vencido, etc.) solo va al log y al header WWW-Authenticate.
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiError> manejarNoAutenticado(AuthenticationException ex, HttpServletRequest request) {
+        log.warn("Petición no autenticada a {}: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.UNAUTHORIZED, MENSAJE_NO_AUTENTICADO, request);
     }
 
     // 400: JSON mal formado. Si es un enum inválido, se indica el campo y los valores permitidos

@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 @Entity
@@ -33,6 +34,10 @@ import java.util.Set;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Persona {
+
+    // Escala de la Central de Deudores: 1 normal ... 5 irrecuperable, 6 irrecuperable por disposición técnica
+    private static final int SITUACION_BCRA_MINIMA = 1;
+    private static final int SITUACION_BCRA_MAXIMA = 6;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -74,14 +79,11 @@ public class Persona {
     @Column(precision = 15, scale = 2)
     private BigDecimal ingresosMensualesDeclarados;
 
-    // Caché de la última consulta a la Central de Deudores del BCRA (lógica de solvencia a cargo del Dev 4)
-    @Setter
+    // Última evaluación en la Central de Deudores del BCRA (F-08). Solo se escribe con registrarEvaluacionBcra()
     private Integer situacionCrediticiaBcra;
 
-    @Setter
     private Integer chequesRechazados;
 
-    @Setter
     private LocalDateTime fechaConsultaBcra;
 
     @CreationTimestamp
@@ -112,6 +114,32 @@ public class Persona {
 
     public boolean tieneRol(TipoPersonaEnum rol) {
         return roles.contains(rol);
+    }
+
+    /**
+     * Registra el resultado de una consulta a la Central de Deudores del BCRA (F-08, RN-07).
+     * Reemplaza la evaluación anterior: se conserva solo la más reciente.
+     * Los datos inválidos son un error de programación (quien llama los obtuvo del BCRA), no de negocio.
+     *
+     * @param situacionCrediticia peor situación informada por el BCRA, de 1 (normal) a 6
+     * @param chequesRechazados   cantidad de cheques rechazados informados (0 si no tiene)
+     * @param fechaConsulta       momento de la consulta, tomado del Clock de la aplicación
+     */
+    public void registrarEvaluacionBcra(int situacionCrediticia, int chequesRechazados,
+            LocalDateTime fechaConsulta) {
+        // Todas las validaciones antes de asignar: un rechazo no deja la evaluación a medias
+        Objects.requireNonNull(fechaConsulta, "La fecha de consulta es obligatoria");
+        if (situacionCrediticia < SITUACION_BCRA_MINIMA || situacionCrediticia > SITUACION_BCRA_MAXIMA) {
+            throw new IllegalArgumentException("La situación crediticia del BCRA va de " + SITUACION_BCRA_MINIMA
+                    + " a " + SITUACION_BCRA_MAXIMA + ": " + situacionCrediticia);
+        }
+        if (chequesRechazados < 0) {
+            throw new IllegalArgumentException("La cantidad de cheques rechazados no puede ser negativa: "
+                    + chequesRechazados);
+        }
+        this.situacionCrediticiaBcra = situacionCrediticia;
+        this.chequesRechazados = chequesRechazados;
+        this.fechaConsultaBcra = fechaConsulta;
     }
 
     public String getNombreCompleto() {
