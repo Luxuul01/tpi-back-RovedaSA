@@ -63,20 +63,26 @@ public class GWConfig {
                 .build();
     }
 
-    @Bean
-    public Converter<Jwt, Mono<AbstractAuthenticationToken>> grantedAuthoritiesExtractor() {
-        return jwt -> {
-            Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-            Collection<GrantedAuthority> authorities = Collections.emptyList();
+    /**
+     * Convierte los roles de Keycloak ({@code realm_access.roles}) en {@code GrantedAuthority} con prefijo {@code ROLE_}.
+     * No se expone como {@code @Bean} para que {@code webFluxConversionService} no lo registre como conversor HTTP genérico.
+     */
+    Converter<Jwt, Mono<AbstractAuthenticationToken>> grantedAuthoritiesExtractor() {
+        return new Converter<Jwt, Mono<AbstractAuthenticationToken>>() {
+            @Override
+            public Mono<AbstractAuthenticationToken> convert(Jwt jwt) {
+                Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+                Collection<GrantedAuthority> authorities = Collections.emptyList();
 
-            if (realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles) {
-                authorities = roles.stream()
-                        .map(Object::toString)
-                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                        .collect(Collectors.toList());
+                if (realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles) {
+                    authorities = roles.stream()
+                            .map(Object::toString)
+                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                            .collect(Collectors.toList());
+                }
+
+                return Mono.just(new JwtAuthenticationToken(jwt, authorities));
             }
-
-            return Mono.just(new JwtAuthenticationToken(jwt, authorities));
         };
     }
 }
