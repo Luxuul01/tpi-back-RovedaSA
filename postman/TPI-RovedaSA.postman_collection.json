@@ -445,7 +445,7 @@
           }
         },
         {
-          "name": "5. Evaluar garante en la Central de Deudores del BCRA",
+          "name": "5. Evaluar solvencia del garante en la Central de Deudores del BCRA (F-08)",
           "event": [
             {
               "listen": "test",
@@ -454,16 +454,18 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
+                  "pm.test('Es la persona evaluada', () => pm.expect(b.personaId).to.eql(pm.collectionVariables.get('garanteId')));",
                   "pm.test('Trae situación y cheques del BCRA', () => { pm.expect(b.situacionCrediticiaBcra).to.be.a('number'); pm.expect(b.chequesRechazados).to.be.a('number'); });",
-                  "pm.test('Califica (CUIT generado sin registros, ingresos >= 3 x canon)', () => pm.expect(b.esSolvente).to.be.true);"
+                  "pm.test('Califica según RN-07 (CUIT generado sin registros: situación 1 y 0 cheques)', () => pm.expect(b.esSolvente).to.be.true);",
+                  "pm.test('El motivo no menciona ingresos (RN-07 no los usa)', () => pm.expect(b.motivoEvaluacion).to.not.include('ingreso'));"
                 ]
               }
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra?ingresosDeclarados=2500000&canonMensual={{canonAnterior}}",
+            "url": "{{baseUrl}}/api/personas/{{garanteId}}/evaluacion-solvencia",
             "description": "",
             "auth": {
               "type": "bearer",
@@ -854,9 +856,9 @@
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra",
+            "url": "{{baseUrl}}/api/personas/{{garanteId}}/evaluacion-solvencia",
             "description": "",
             "auth": {
               "type": "bearer",
@@ -1004,7 +1006,7 @@
           }
         },
         {
-          "name": "Evaluar en el BCRA un CUIT mal formado -> 400",
+          "name": "Evaluar la solvencia de alguien que no es garante -> 400",
           "event": [
             {
               "listen": "test",
@@ -1022,9 +1024,9 @@
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/personas/garantes/123/evaluacion-bcra",
+            "url": "{{baseUrl}}/api/personas/{{inquilinoId}}/evaluacion-solvencia",
             "description": "",
             "auth": {
               "type": "bearer",
@@ -1039,14 +1041,14 @@
           }
         },
         {
-          "name": "Evaluar con canon no numérico -> 400",
+          "name": "Evaluar la solvencia de una persona inexistente -> 404",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
                   "pm.test('Error con formato ApiError y correlationId', () => {",
                   "  const e = pm.response.json();",
                   "  pm.expect(e).to.have.property('message');",
@@ -1057,9 +1059,9 @@
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra?canonMensual=abc",
+            "url": "{{baseUrl}}/api/personas/999999/evaluacion-solvencia",
             "description": "",
             "auth": {
               "type": "bearer",
