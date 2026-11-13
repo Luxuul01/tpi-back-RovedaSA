@@ -155,6 +155,18 @@ public class PropiedadService {
         return respuesta;
     }
 
+    /**
+     * Baja lógica (F-06, RN-05): DISPONIBLE -> INACTIVA. La entidad rechaza cualquier otro estado con
+     * OperacionInvalidaException (400). No hay reactivación por API: no está en el alcance.
+     */
+    @Transactional
+    public PropiedadResponse darDeBaja(Long id) {
+        Propiedad propiedad = buscar(id);
+        propiedad.inactivar();
+        log.info("Propiedad {} (ID: {}) dada de baja: pasó a INACTIVA", propiedad.getCodigo(), id);
+        return PropiedadMapper.aResponse(propiedad);
+    }
+
     @Transactional(readOnly = true)
     public PropiedadResponse obtener(Long id) {
         return PropiedadMapper.aResponse(buscar(id));

@@ -38,7 +38,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
-@Tag(name = "Propiedades", description = "Alta, consulta y cambios de estado de inmuebles")
+@Tag(name = "Propiedades", description = "Alta, consulta, modificación, baja lógica y cambios de estado de inmuebles")
 @RestController
 @RequestMapping("/api/propiedades")
 @PreAuthorize("hasRole('ADMINISTRADOR')")
@@ -105,6 +105,27 @@ public class PropiedadController {
     public PropiedadResponse modificar(@PathVariable("id") Long id,
             @Valid @RequestBody ModificarPropiedadRequest solicitud) {
         return propiedadService.modificar(id, solicitud);
+    }
+
+    // F-06. Solo ADMINISTRADOR (heredado del @PreAuthorize de la clase). No hay endpoint de reactivación.
+    @Operation(summary = "Dar de baja lógica una propiedad disponible",
+            description = "La propiedad pasa de DISPONIBLE a INACTIVA. No se borra: queda en el histórico.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Propiedad en estado INACTIVA"),
+            @ApiResponse(responseCode = "400", description = "La propiedad no está DISPONIBLE",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad cambió al mismo tiempo (control de versión)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PatchMapping("/{id}/baja")
+    public PropiedadResponse darDeBaja(@PathVariable("id") Long id) {
+        return propiedadService.darDeBaja(id);
     }
 
     // Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)
