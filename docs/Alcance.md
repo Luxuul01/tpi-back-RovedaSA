@@ -425,10 +425,10 @@ Las reglas que dependen del paso del tiempo (seña vencida, finalización) se cu
 Estado al 03/11/2026. Ir tachando a medida que se resuelven.
 
 ### Infraestructura y Gateway (Dev 1)
-- [ ] Asignar el rol ADMINISTRADOR a la cuenta de servicio `service-account-backend-services` en Keycloak y reexportar `realm-export.json`. **Sin esto, ms-contratos recibe 403 al cambiar el estado de las propiedades.**
-- [ ] `SecurityWebFilterChain` del Gateway: POST/PUT/PATCH/DELETE solo para ADMINISTRADOR.
-- [ ] Dockerfiles multi-etapa de `api-gateway`, `ms-catalogo-inmobiliario` y `ms-contratos`, y agregarlos a `docker-compose.yml` con `depends_on` + `service_healthy`. Sin esto, Promtail no recolecta los logs de los servicios.
-- [ ] `application-docker.yml` en cada servicio (hostnames de la red Docker en lugar de `localhost`). Mantener `jwk-set-uri`.
+- [x] Asignar el rol ADMINISTRADOR a la cuenta de servicio `service-account-backend-services` en Keycloak y reexportar `realm-export.json`. **Sin esto, ms-contratos recibe 403 al cambiar el estado de las propiedades.**
+- [x] `SecurityWebFilterChain` del Gateway: POST/PUT/PATCH/DELETE solo para ADMINISTRADOR.
+- [x] Dockerfiles multi-etapa de `api-gateway`, `ms-catalogo-inmobiliario` y `ms-contratos`, y agregarlos a `docker-compose.yml` con `depends_on` + `service_healthy`. Sin esto, Promtail no recolecta los logs de los servicios.
+- [x] `application-docker.yml` en cada servicio (hostnames de la red Docker en lugar de `localhost`). Mantener `jwk-set-uri`.
 
 ### Catálogo (Dev 2)
 - [x] `POST /api/personas/{id}/evaluacion-solvencia`, con el cliente BCRA Central de Deudores (coordinar con Dev 4).

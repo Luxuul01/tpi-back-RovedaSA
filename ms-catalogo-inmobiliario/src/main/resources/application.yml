@@ -29,8 +29,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          # issuer-uri valida el claim iss; jwk-set-uri evita depender del discovery de Keycloak para bajar las claves
-          issuer-uri: http://localhost:8083/realms/rovedasa-realm
+          # Solo jwk-set-uri para aceptar tokens emitidos via localhost, 127.0.0.1 o keycloak:8080 en Docker
           jwk-set-uri: http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/certs
 
 # Integracion externa GeoRef AR
