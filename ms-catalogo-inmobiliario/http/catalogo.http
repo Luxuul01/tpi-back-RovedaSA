@@ -303,3 +303,182 @@ Content-Type: application/json
 {
   "nuevoEstado": "RESERVADA"
 }
+
+
+### =====================================================================
+### F-06: modificar y dar de baja una propiedad (solo ADMINISTRADOR)
+### Correr después del flujo principal: la propiedad de Independencia 900 tiene que estar DISPONIBLE (paso 10).
+### =====================================================================
+
+@propiedadVillaBelgranoId = {{crearPropiedadVillaBelgrano.response.body.$.id}}
+
+### M1. Modificar sin cambiar la dirección (tipología y superficies) -> 200
+# No llama a GeoRef: vuelve a tasar con las coordenadas que ya tiene.
+# CASA, 80 m² totales y 60 cubiertos -> 70,00 m² computables (factor CASA 1,10)
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "CASA",
+  "calle": "Independencia",
+  "numero": "900",
+  "piso": "3",
+  "departamento": "B",
+  "barrio": "Nueva Córdoba",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 80,
+  "superficieCubiertaM2": 60
+}
+
+### M2. Modificar la dirección (Independencia 900 -> 1200) -> 200
+# Vuelve a normalizar con GeoRef (nueva direccionNormalizada y coordenadas) y a tasar.
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "1200",
+  "barrio": "Nueva Córdoba",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 55,
+  "superficieCubiertaM2": 50
+}
+
+### M3. Dar de baja (DISPONIBLE -> INACTIVA) -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/baja
+Authorization: Bearer {{tokenAdmin}}
+
+### M4. Modificar una propiedad INACTIVA también está permitido -> 200
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "1200",
+  "barrio": "Nueva Córdoba",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 60,
+  "superficieCubiertaM2": 50
+}
+
+### ME1. Dar de baja una propiedad que ya está INACTIVA -> 400
+PATCH {{baseUrl}}/api/propiedades/{{propiedadId}}/baja
+Authorization: Bearer {{tokenAdmin}}
+
+### ME2. (Preparación) Reservar la propiedad de Villa Belgrano -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadVillaBelgranoId}}/estado
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "nuevoEstado": "RESERVADA",
+  "inquilinoId": {{inquilinoId}}
+}
+
+### ME3. Modificar una propiedad RESERVADA -> 400 (hay un contrato que la referencia)
+PUT {{baseUrl}}/api/propiedades/{{propiedadVillaBelgranoId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "CASA",
+  "calle": "Gauss",
+  "numero": "5800",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 130,
+  "superficieCubiertaM2": 90
+}
+
+### ME4. Dar de baja una propiedad RESERVADA -> 400
+PATCH {{baseUrl}}/api/propiedades/{{propiedadVillaBelgranoId}}/baja
+Authorization: Bearer {{tokenAdmin}}
+
+### ME5. (Limpieza) Liberar la propiedad de Villa Belgrano -> 200
+PATCH {{baseUrl}}/api/propiedades/{{propiedadVillaBelgranoId}}/estado
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "nuevoEstado": "DISPONIBLE"
+}
+
+### ME6. Modificar con una dirección que GeoRef no encuentra -> 400 (la propiedad queda como estaba)
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Obispo Trejo",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 60
+}
+
+### ME7. Cuerpo inválido (sin calle y con superficie negativa) -> 400 con el detalle en "validaciones"
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": -5
+}
+
+### ME8. Modificar con token de PROPIETARIO -> 403
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Authorization: Bearer {{tokenPropietario}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 60
+}
+
+### ME9. Dar de baja con token de PROPIETARIO -> 403
+PATCH {{baseUrl}}/api/propiedades/{{propiedadVillaBelgranoId}}/baja
+Authorization: Bearer {{tokenPropietario}}
+
+### ME10. Modificar sin token -> 401
+PUT {{baseUrl}}/api/propiedades/{{propiedadId}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 60
+}
+
+### ME11. Modificar una propiedad inexistente -> 404
+PUT {{baseUrl}}/api/propiedades/999999
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "tipologia": "DEPARTAMENTO",
+  "calle": "Independencia",
+  "numero": "1200",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "superficieTotalM2": 60
+}
