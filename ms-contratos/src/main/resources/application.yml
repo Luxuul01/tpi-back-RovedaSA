@@ -12,6 +12,7 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: true
@@ -29,12 +30,25 @@ spring:
 catalogo:
   service:
     base-url: http://localhost:8081/api
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
 
 # Integracion externa BCRA
 bcra:
   api:
     base-url: https://api.bcra.gob.ar
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
 
 logging:
   level:
     com.rovedasa.contratos: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when_authorized

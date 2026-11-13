@@ -1,0 +1,1233 @@
+{
+  "info": {
+    "name": "TPI RovedaSA - Backend de Aplicaciones 2026",
+    "description": "Colección de QA del TPI.\n\nOrden: 0 (tokens) -> 1 (flujo central) -> 2 (índices) -> 3 (seguridad) -> 4 (errores). Las carpetas 3 y 4 usan los ids que guarda la 1.\n\nLos pasos de personas y propiedades usan los endpoints de la rama de catálogo (Dev 2): la carpeta 1 corre completa una vez mergeadas las ramas.\n\nRequisitos: docker compose up (bases y Keycloak), gateway en 8080, ms-catalogo en 8081 y ms-contratos en 8082. Con perfil 'local' de catálogo la seguridad está apagada y la carpeta 3 no aplica.\n\nLos CUIT se generan en cada corrida (válidos por módulo 11), así la colección se puede correr varias veces sin errores 409.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "propietarioId",
+      "value": ""
+    },
+    {
+      "key": "inquilinoId",
+      "value": ""
+    },
+    {
+      "key": "garanteId",
+      "value": ""
+    },
+    {
+      "key": "propiedadId",
+      "value": ""
+    },
+    {
+      "key": "cuitPropietario",
+      "value": ""
+    },
+    {
+      "key": "cuitInquilino",
+      "value": ""
+    },
+    {
+      "key": "cuitGarante",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0 - Autenticación (Keycloak)",
+      "description": "Correr primero. Guarda los tres tokens en el entorno.",
+      "item": [
+        {
+          "name": "Token admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().access_token;",
+                  "pm.test('Trae access_token', () => pm.expect(t).to.be.a('string'));",
+                  "pm.environment.set('tokenAdmin', t);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{keycloakUrl}}/realms/rovedasa-realm/protocol/openid-connect/token",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "admin"
+                },
+                {
+                  "key": "password",
+                  "value": "admin123"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token propietario1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().access_token;",
+                  "pm.test('Trae access_token', () => pm.expect(t).to.be.a('string'));",
+                  "pm.environment.set('tokenPropietario', t);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{keycloakUrl}}/realms/rovedasa-realm/protocol/openid-connect/token",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "propietario1"
+                },
+                {
+                  "key": "password",
+                  "value": "prop123"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token inquilino1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json().access_token;",
+                  "pm.test('Trae access_token', () => pm.expect(t).to.be.a('string'));",
+                  "pm.environment.set('tokenInquilino', t);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{keycloakUrl}}/realms/rovedasa-realm/protocol/openid-connect/token",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "inquilino1"
+                },
+                {
+                  "key": "password",
+                  "value": "inq123"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Flujo central (catálogo + BCRA)",
+      "description": "Recorrido de punta a punta disponible hoy. Cuando Dev 3 publique ms-contratos, los pasos 6 y 7 los dispara POST /api/contratos/{id}/seniar y /activar en lugar del PATCH directo.",
+      "item": [
+        {
+          "name": "1. Crear propietario",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Genera un CUIT/CUIL válido (módulo 11) para que la colección se pueda correr varias veces",
+                  "function generarCuit(prefijo) {",
+                  "  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "  while (true) {",
+                  "    const base = prefijo + String(Math.floor(10000000 + Math.random() * 89999999));",
+                  "    let suma = 0;",
+                  "    for (let i = 0; i < 10; i++) suma += parseInt(base[i]) * pesos[i];",
+                  "    let dv = 11 - (suma % 11);",
+                  "    if (dv === 11) dv = 0;",
+                  "    if (dv === 10) continue;",
+                  "    return base + dv;",
+                  "  }",
+                  "}",
+                  "pm.collectionVariables.set('cuitPropietario', generarCuit('20'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('propietarioId', b.id);",
+                  "pm.test('Devuelve el id', () => pm.expect(b.id).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitPropietario}}\",\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"roles\": [\n    \"PROPIETARIO\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "2. Crear inquilino",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Genera un CUIT/CUIL válido (módulo 11) para que la colección se pueda correr varias veces",
+                  "function generarCuit(prefijo) {",
+                  "  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "  while (true) {",
+                  "    const base = prefijo + String(Math.floor(10000000 + Math.random() * 89999999));",
+                  "    let suma = 0;",
+                  "    for (let i = 0; i < 10; i++) suma += parseInt(base[i]) * pesos[i];",
+                  "    let dv = 11 - (suma % 11);",
+                  "    if (dv === 11) dv = 0;",
+                  "    if (dv === 10) continue;",
+                  "    return base + dv;",
+                  "  }",
+                  "}",
+                  "pm.collectionVariables.set('cuitInquilino', generarCuit('27'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('inquilinoId', b.id);",
+                  "pm.test('Devuelve el id', () => pm.expect(b.id).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitInquilino}}\",\n  \"nombre\": \"Lucía\",\n  \"apellido\": \"Gómez\",\n  \"roles\": [\n    \"INQUILINO\"\n  ],\n  \"ingresosMensualesDeclarados\": 950000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3. Crear garante",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Genera un CUIT/CUIL válido (módulo 11) para que la colección se pueda correr varias veces",
+                  "function generarCuit(prefijo) {",
+                  "  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "  while (true) {",
+                  "    const base = prefijo + String(Math.floor(10000000 + Math.random() * 89999999));",
+                  "    let suma = 0;",
+                  "    for (let i = 0; i < 10; i++) suma += parseInt(base[i]) * pesos[i];",
+                  "    let dv = 11 - (suma % 11);",
+                  "    if (dv === 11) dv = 0;",
+                  "    if (dv === 10) continue;",
+                  "    return base + dv;",
+                  "  }",
+                  "}",
+                  "pm.collectionVariables.set('cuitGarante', generarCuit('20'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('garanteId', b.id);",
+                  "pm.test('Devuelve el id', () => pm.expect(b.id).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitGarante}}\",\n  \"nombre\": \"Marcos\",\n  \"apellido\": \"Díaz\",\n  \"roles\": [\n    \"GARANTE\"\n  ],\n  \"ingresosMensualesDeclarados\": 2500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4. Crear propiedad (GeoRef normaliza la dirección y tasa por zona)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('propiedadId', b.id);",
+                  "pm.test('Devuelve el id', () => pm.expect(b.id).to.be.a('number'));",
+                  "pm.test('Queda DISPONIBLE con dirección normalizada y precio sugerido', () => {",
+                  "  pm.expect(b.estado).to.eql('DISPONIBLE');",
+                  "  pm.expect(b).to.have.property('latitud');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"Independencia\",\n  \"numero\": \"900\",\n  \"piso\": \"3\",\n  \"departamento\": \"B\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5. Evaluar garante en la Central de Deudores del BCRA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Trae situación y cheques del BCRA', () => { pm.expect(b.situacionCrediticiaBcra).to.be.a('number'); pm.expect(b.chequesRechazados).to.be.a('number'); });",
+                  "pm.test('Califica (CUIT generado sin registros, ingresos >= 3 x canon)', () => pm.expect(b.esSolvente).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra?ingresosDeclarados=2500000&canonMensual={{canonAnterior}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6. Reservar la propiedad (seña)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda RESERVADA', () => pm.expect(pm.response.json().estado).to.eql('RESERVADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedadId}}/estado",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nuevoEstado\": \"RESERVADA\",\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "7. Alquilar la propiedad (activación)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ALQUILADA', () => pm.expect(pm.response.json().estado).to.eql('ALQUILADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedadId}}/estado",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nuevoEstado\": \"ALQUILADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "8. Simular el primer ajuste por ICL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Canon nuevo = canon anterior x coeficiente', () => pm.expect(b.montoNuevo).to.be.closeTo(b.montoAnterior * b.coeficiente, 0.01));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/ICL/simular-ajuste?canonAnterior={{canonAnterior}}&desde={{fechaDesde}}&hasta={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Índices BCRA (ms-contratos)",
+      "description": "Directo a ms-contratos: el Gateway todavía no enruta /api/indices/**.",
+      "item": [
+        {
+          "name": "ICL - valor del día",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Es ICL con valor positivo', () => { pm.expect(b.tipoIndice).to.eql('ICL'); pm.expect(b.valor).to.be.above(0); });",
+                  "pm.test('Informa el origen del dato', () => pm.expect(['BCRA','CACHE_CONTINGENCIA']).to.include(b.origen));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/ICL/valor?fecha={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "ICL - coeficiente entre fechas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('coeficiente = ICL hasta / ICL desde', () => pm.expect(b.coeficiente).to.be.closeTo(b.valorIndiceHasta / b.valorIndiceDesde, 0.00001));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/ICL/coeficiente?desde={{fechaDesde}}&hasta={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "IPC - coeficiente trimestral",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Usa 3 meses de inflación', () => pm.expect(b.variacionesMensuales.length).to.eql(3));",
+                  "pm.test('Encadena las variaciones mensuales', () => {",
+                  "  const prod = b.variacionesMensuales.reduce((acc, m) => acc * (1 + m.valor / 100), 1);",
+                  "  pm.expect(b.coeficiente).to.be.closeTo(prod, 0.00001);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/IPC/coeficiente?desde={{fechaDesde}}&hasta={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "IPC - simular ajuste de canon",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Trae los campos de la entidad Ajuste', () => pm.expect(b).to.include.keys('fechaIndiceDesde','fechaIndiceHasta','valorIndiceDesde','valorIndiceHasta','montoAnterior','montoNuevo','porcentajeVariacion'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/IPC/simular-ajuste?canonAnterior={{canonAnterior}}&desde={{fechaDesde}}&hasta={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Seguridad",
+      "item": [
+        {
+          "name": "Sin token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "INQUILINO intenta dar de alta una persona -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20-12345678-6\",\n  \"nombre\": \"X\",\n  \"apellido\": \"Y\",\n  \"roles\": [\n    \"GARANTE\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PROPIETARIO intenta listar personas -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPropietario}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "PROPIETARIO intenta evaluar un garante -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPropietario}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "PROPIETARIO ve solo sus propiedades -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/propias",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPropietario}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Errores y reglas de negocio",
+      "item": [
+        {
+          "name": "CUIT con dígito verificador inválido -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20-12345678-0\",\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"roles\": [\n    \"PROPIETARIO\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "CUIT duplicado -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitPropietario}}\",\n  \"nombre\": \"Otro\",\n  \"apellido\": \"Pérez\",\n  \"roles\": [\n    \"PROPIETARIO\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Evaluar en el BCRA un CUIT mal formado -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/personas/garantes/123/evaluacion-bcra",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Evaluar con canon no numérico -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/personas/garantes/{{cuitGarante}}/evaluacion-bcra?canonMensual=abc",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Transición inválida ALQUILADA -> RESERVADA -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedadId}}/estado",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nuevoEstado\": \"RESERVADA\",\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Tipo de índice inválido -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/UVA/valor?fecha={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Fechas invertidas -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/ICL/coeficiente?desde={{fechaHasta}}&hasta={{fechaDesde}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Falta canonAnterior -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e).to.have.property('correlationId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{contratosUrl}}/api/indices/ICL/simular-ajuste?desde={{fechaDesde}}&hasta={{fechaHasta}}",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

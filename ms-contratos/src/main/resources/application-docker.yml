@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://db-contratos:5432/contratos_db
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+
+catalogo:
+  service:
+    base-url: http://ms-catalogo-inmobiliario:8081/api

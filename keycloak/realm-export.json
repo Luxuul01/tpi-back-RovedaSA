@@ -98,6 +98,16 @@
       "realmRoles": [
         "INQUILINO"
       ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "username": "service-account-backend-services",
+      "enabled": true,
+      "email": "service-account-backend-services@placeholder.org",
+      "serviceAccountClientId": "backend-services",
+      "realmRoles": [
+        "ADMINISTRADOR"
+      ]
     }
   ]
 }
