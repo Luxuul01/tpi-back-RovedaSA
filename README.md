@@ -8,9 +8,10 @@ Sistema Backend de Administración de Alquileres Inmobiliarios basado en microse
 
 Toda la documentación teórica, de negocio, diseño y organización del equipo se encuentra versionada dentro de la carpeta [`/docs`](./docs/):
 
+* 📌 **[Alcance Comprometido con la Cátedra](./docs/Alcance.md)**: Fuente de verdad del proyecto. Consolida lo declarado en el formulario de propuesta (funcionalidades, reglas, endpoints, persistencia, seguridad, pruebas y comprobaciones) y la lista de pendientes. Ante cualquier diferencia con otro documento, prevalece este.
 * 📄 **[Especificación del Dominio y Reglas de Negocio](./docs/Dominio.md)**: Descripción detallada del problema, servicios, bases de datos por servicio, APIs externas, roles de acceso (aislamiento estricto para Inquilinos y Propietarios), Casos de Uso (DSI) y Requerimientos No Funcionales (ISO 25010).
 * 📐 **[Diagramas de Arquitectura y Máquina de Estados](./docs/Diagramas.md)**: Código PlantUML interactivo del Diagrama de Clases del Dominio, Contexto C1, Contenedores C2 y la Máquina de Estados del Contrato (`Creado` $\rightarrow$ `Señado` $\rightarrow$ `Activo` $\rightarrow$ `Cancelado` / `Rescindido` / `Finalizado`).
-* 👥 **[Plan de Trabajo y Flujos de GitHub](./docs/PlanDeTrabajo.md)**: Matriz de responsabilidades de los 4 integrantes, temas de defensa oral, pautas de trabajo en Git (ramas, Commons First, PRs con Squash) y guía de resolución de emergencias.
+* 👥 **[Plan de Trabajo y Flujos de GitHub](./docs/PlanDeTrabajo.md)**: Matriz de responsabilidades de los 5 integrantes, temas de defensa oral, pautas de trabajo en Git (ramas, Commons First, PRs con Squash) y guía de resolución de emergencias.
 
 ---
 
@@ -54,10 +55,11 @@ El sistema se compone de una arquitectura desacoplada en microservicios, punto d
 
 | Integrante | Rol y Módulo | Responsabilidad Principal |
 | :--- | :--- | :--- |
-| **Dev 1** | **Tech Lead & Gateway** | Gateway, seguridad perimetral JWT, Docker Compose, Keycloak Realm y estructura base de `inmobiliaria-commons`. |
-| **Dev 2** | **Catálogo Inmobiliario** | Módulo `ms-catalogo-inmobiliario`, base `db_catalogo`, integración con GeoRef AR y filtro por rol Propietario. |
-| **Dev 3** | **Contratos & Patrón State** | Módulo `ms-contratos`, base `db_contratos`, implementación del Patrón State y orquestación de señas y alquileres. |
-| **Dev 4** | **BCRA, ICL & QA/Demo** | Clientes BCRA (Central de Deudores e ICL), resiliencia local `IndiceIclCache`, ajuste periódico y suite E2E en Postman. |
+| **Dev 1** — Luciano Agüero | **Tech Lead & Gateway** | Gateway, seguridad perimetral JWT, Docker Compose, Keycloak Realm y estructura base de `inmobiliaria-commons`. |
+| **Dev 2** — Levi Angelino | **Catálogo Inmobiliario** | Módulo `ms-catalogo-inmobiliario`, base `db_catalogo`, integración con GeoRef AR y filtro por rol Propietario. |
+| **Dev 3** — Santino Brenna | **Contratos & Patrón State** | Módulo `ms-contratos`, base `db_contratos`, implementación del Patrón State y orquestación de señas y alquileres. |
+| **Dev 4** — Lautaro Roveda | **BCRA, ICL & QA/Demo** | Clientes BCRA (Central de Deudores e ICL), resiliencia local `IndiceIclCache`, ajuste periódico y suite E2E en Postman. |
+| **Dev 5** — Esteban | **Contratos (junto a Dev 3)** | Módulo `ms-contratos`. La división de tareas con Dev 3 está a definir (ver [Alcance §15](./docs/Alcance.md#15-pendientes-para-cumplir-el-alcance)). |
 
 ---
 
@@ -83,20 +85,20 @@ Esto iniciará:
 ### 2. Compilar e Instalar el Proyecto
 Desde la raíz del repositorio:
 ```bash
-mvn clean install
+./mvnw clean install
 ```
 
 ### 3. Ejecutar los Microservicios
 Podés iniciarlos desde tu IDE o por consola:
 ```bash
 # Terminal 1: Catálogo
-cd ms-catalogo-inmobiliario && mvn spring-boot:run
+./mvnw -pl ms-catalogo-inmobiliario spring-boot:run
 
 # Terminal 2: Contratos
-cd ms-contratos && mvn spring-boot:run
+./mvnw -pl ms-contratos spring-boot:run
 
 # Terminal 3: Gateway
-cd api-gateway && mvn spring-boot:run
+./mvnw -pl api-gateway spring-boot:run
 ```
 
 ---
@@ -139,7 +141,7 @@ El ecosistema implementa el pipeline de 4 etapas recomendado por la cátedra (**
    ```
 3. **Protocolo Commons First**: Cualquier cambio en DTOs de `inmobiliaria-commons` se avisa al equipo, se aprueba en un PR express a `develop` y todos actualizan sus ramas.
 4. **Pull Requests**:
-   * Requiere compilación local limpia (`mvn clean install`).
+   * Requiere compilación local limpia (`./mvnw clean install`).
    * Al menos 1 aprobación (Review) de un compañero.
    * Merge con opción **"Squash and Merge"**.
 
