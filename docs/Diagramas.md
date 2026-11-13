@@ -264,121 +264,288 @@ ms-contratos ..> ms-catalogo-inmobiliario : "comunicación sincrónica vía Rest
 ```
 # C4 - Contexto
 
+![Diagrama de Contexto C4 - Nivel 1](./img/C4-Contexto.png)
+
 ```plantuml
-@startuml
+@startuml C4_Contexto
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-LAYOUT_LEFT_RIGHT()
+LAYOUT_TOP_DOWN()
 SHOW_PERSON_OUTLINE()
 
-title Diagrama de Contexto (C1) - Sistema de Administración de Alquileres
+title Diagrama de Contexto (C4 - Nivel 1) - Alquileres Roveda SA
 
-' Actores del dominio con aislamiento estricto por rol
-Person(admin, "Administrador de Propiedades", "Rol: ADMINISTRADOR. Opera integralmente el sistema: registra clientes y propiedades, evalúa garantes y gestiona todo el ciclo de vida de los contratos.")
-Person(propietario, "Propietario", "Rol: PROPIETARIO (Solo Lectura). Delega la administración. Consulta exclusivamente sus propiedades y los contratos celebrados sobre esas propiedades.")
-Person(inquilino, "Inquilino", "Rol: INQUILINO (Solo Lectura). Consulta exclusivamente sus propios contratos de alquiler, canon actual e historial de aumentos.")
+Person(admin, "Administrador", "Rol ADMINISTRADOR. Personal de la inmobiliaria que opera todo el sistema.")
+Person(propietario, "Propietario", "Rol PROPIETARIO. Dueño de inmuebles. Solo lectura de su propia información.")
+Person(inquilino, "Inquilino", "Rol INQUILINO. Locatario. Solo lectura de su propia información.")
 
-' Sistema en estudio
-System(sistema_alquileres, "Sistema Backend de Administración de Alquileres", "Centraliza la operación inmobiliaria para los administradores y brinda transparencia de consulta a propietarios e inquilinos.")
+System(sistema, "Sistema de Administración de Alquileres", "Backend REST. Gestiona personas, propiedades y el ciclo de vida de los contratos, con ajustes por ICL, cuotas y mora.")
 
-' Sistemas Externos
-System_Ext(keycloak, "Keycloak Identity Provider", "Servidor OIDC / OAuth2. Autentica usuarios y emite tokens JWT con roles (ADMINISTRADOR, PROPIETARIO, INQUILINO).")
-System_Ext(api_bcra, "API Pública BCRA", "Provee Central de Deudores (riesgo crediticio por CUIT) y Principales Variables (Índice ICL para aumentos).")
-System_Ext(api_georef, "API Pública GeoRef AR", "Normaliza direcciones y obtiene coordenadas (lat/lon) al registrar propiedades.")
+System_Ext(keycloak, "Keycloak", "Proveedor de identidad OAuth2 / OpenID Connect. Autentica usuarios y emite tokens JWT con roles.")
+System_Ext(georef, "API GeoRef AR", "Servicio público de normalización de direcciones del Instituto Geográfico Nacional.")
+System_Ext(bcra_deudores, "API BCRA - Central de Deudores", "Servicio público con la situación crediticia y los cheques rechazados de una persona por CUIT/CUIL.")
+System_Ext(bcra_estadisticas, "API BCRA - Estadísticas", "Servicio público con la serie diaria del Índice de Contratos de Locación (ICL).")
 
-' Relaciones de los actores
-Rel(admin, sistema_alquileres, "Gestiona catálogo y opera ciclo de vida de contratos (Lectura y Escritura)", "HTTPS / JSON")
-Rel(propietario, sistema_alquileres, "Consulta sus propiedades y contratos de esas propiedades (Solo GET)", "HTTPS / JSON")
-Rel(inquilino, sistema_alquileres, "Consulta únicamente sus propios contratos de alquiler (Solo GET)", "HTTPS / JSON")
+Rel(admin, sistema, "Registra personas y propiedades, opera contratos, ajustes, rescisiones y pagos", "HTTPS / REST + JWT")
+Rel(propietario, sistema, "Consulta sus propiedades y los contratos y cuotas sobre ellas", "HTTPS / REST (solo GET) + JWT")
+Rel(inquilino, sistema, "Consulta sus contratos, ajustes y cuotas con mora", "HTTPS / REST (solo GET) + JWT")
 
-' Relaciones hacia sistemas externos
-Rel(sistema_alquileres, keycloak, "Valida tokens JWT y roles de acceso", "OIDC / JWKS (HTTPS)")
-Rel(sistema_alquileres, api_bcra, "Evalúa solvencia de garantes y consulta índice ICL", "REST / HTTPS")
-Rel(sistema_alquileres, api_georef, "Geocodifica y normaliza direcciones de propiedades", "REST / HTTPS")
+Rel(admin, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(propietario, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(inquilino, keycloak, "Se autentica y obtiene token", "OIDC")
 
+Rel(sistema, keycloak, "Valida la firma de los tokens con sus claves públicas", "HTTPS / JWKS")
+Rel(sistema, georef, "Normaliza direcciones y obtiene coordenadas", "HTTPS / REST")
+Rel(sistema, bcra_deudores, "Consulta la solvencia del garante por CUIT", "HTTPS / REST")
+Rel(sistema, bcra_estadisticas, "Obtiene valores del ICL para ajustar el canon", "HTTPS / REST")
+
+SHOW_LEGEND()
 @enduml
 ```
+
 # C4 - Contenedores
 
+![Diagrama de Contenedores C4 - Nivel 2](./img/C4-Contenedores.png)
 
 ```plantuml
-@startuml
+@startuml C4_Contenedores
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 LAYOUT_TOP_DOWN()
 SHOW_PERSON_OUTLINE()
 
-title Diagrama de Contenedores (C2) - Sistema Backend de Administración de Alquileres
+title Diagrama de Contenedores (C4 - Nivel 2) - Alquileres Roveda SA
 
-' Actores diferenciados por permisos (Escritura vs Solo Lectura)
-Person(admin, "Administrador", "Rol: ADMINISTRADOR.\nGestiona integralmente el sistema (Altas, bajas, señas, activación de contratos, aplicación de ajustes y rescisiones).")
-Person(propietario, "Propietario", "Rol: PROPIETARIO (Solo Lectura).\nDelega la administración. Consulta únicamente sus propiedades y los contratos celebrados sobre esas propiedades.")
-Person(inquilino, "Inquilino", "Rol: INQUILINO (Solo Lectura).\nConsulta únicamente sus propios contratos de alquiler vigentes, montos actualizados e historial de aumentos.")
+Person(admin, "Administrador", "Rol ADMINISTRADOR. Opera todo el sistema.")
+Person(propietario, "Propietario", "Rol PROPIETARIO. Solo lectura de su información.")
+Person(inquilino, "Inquilino", "Rol INQUILINO. Solo lectura de su información.")
 
-' Sistemas Externos exigidos por la arquitectura
-System_Ext(keycloak, "Keycloak Identity Provider", "Servidor OIDC / OAuth2.\nAutentica usuarios, emite tokens JWT y administra los roles (ADMINISTRADOR, PROPIETARIO, INQUILINO).")
-System_Ext(api_bcra, "API Pública BCRA", "1) Central de Deudores (/centraldedeudores/v1.0/deudas/{cuit})\n2) Estadísticas ICL (/estadisticas/v2.0/principalesvariables)")
-System_Ext(api_georef, "API Pública GeoRef AR", "API de Datos Geográficos (datos.gob.ar).\nNormaliza direcciones y devuelve coordenadas (lat/lon) al registrar inmuebles.")
+System_Ext(keycloak, "Keycloak", "Proveedor de identidad OAuth2 / OIDC. Emite tokens JWT con roles.")
+System_Ext(georef, "API GeoRef AR", "Normalización de direcciones.")
+System_Ext(bcra_deudores, "API BCRA - Central de Deudores", "Situación crediticia por CUIT/CUIL.")
+System_Ext(bcra_estadisticas, "API BCRA - Estadísticas", "Serie diaria del ICL.")
 
-' Límite del Sistema Backend (Red Docker Compose)
-System_Boundary(sistema_backend, "Sistema Backend TPI (Docker Compose Network)") {
-
-    Container(api_gateway, "API Gateway", "Java 21 / Spring Cloud Gateway", "Punto único de entrada.\nEnruta peticiones y aplica Security Filter: valida firma JWT y controla que POST/PUT/PATCH solo sean de ADMINISTRADOR y GET para consultas.")
-
-    Container(ms_catalogo, "ms-catalogo-inmobiliario", "Java 21 / Spring Boot 3", "Responsabilidad: Administra Propiedades y Personas.\nNormaliza direcciones (GeoRef), evalúa solvencia de garantes (BCRA) y gestiona estados del bien (DISPONIBLE, RESERVADA, ALQUILADA).")
-
-    Container(ms_contratos, "ms-contratos", "Java 21 / Spring Boot 3", "Responsabilidad: Gestiona el ciclo de vida de Contratos (Patrón State: Creado, Señado, Activo, Cancelado, Rescindido, Finalizado), calcula aumentos por ICL (BCRA) y liquida penalizaciones/señas.")
-
-    Container(commons_jar, "inmobiliaria-commons", "Artefacto Maven (.jar)", "Componente común reutilizable.\nContiene DTOs de comunicación inter-servicio, manejo global de excepciones (ApiError) y utilidades de extracción de claims JWT.")
-
-    ContainerDb(db_catalogo, "DB Catálogo", "PostgreSQL (Esquema Catálogo)", "Persiste tablas: propiedades, personas y caché de situación crediticia BCRA.")
-
-    ContainerDb(db_contratos, "DB Contratos", "PostgreSQL (Esquema Contratos)", "Persiste tablas: contratos (con propietarioId e inquilinoId), ajustes y caché de índices ICL (fallback).")
-
-    ' Subsistema de Observabilidad y Centralización de Logs (Stack PLG)
-    Container(promtail, "Promtail", "Daemon / Agente", "Recolecta automáticamente streams stdout/stderr de todos los contenedores Docker mediante el socket de Docker.")
-    ContainerDb(loki, "Loki", "Log Storage Engine", "Persiste y comprime flujos de logs en volumen dedicado, indexados por labels de contenedor.")
-    Container(grafana, "Grafana", "Dashboard Web (:3000)", "Tablero de visualización y consulta centralizada de logs (LogQL) y trazabilidad por X-Correlation-ID.")
+System_Boundary(sistema, "Sistema de Administración de Alquileres") {
+    Container(api_gateway, "API Gateway", "Java 21, Spring Cloud Gateway", "Punto único de entrada. Valida el JWT, restringe métodos por rol, enruta a los microservicios y agrega el X-Correlation-ID.")
+    Container(ms_catalogo, "ms-catalogo-inmobiliario", "Java 21, Spring Boot 3", "Personas, propiedades, tasación por zona y estado de ocupación. Normaliza direcciones y evalúa la solvencia de garantes.")
+    Container(ms_contratos, "ms-contratos", "Java 21, Spring Boot 3", "Ciclo de vida del contrato (patrón State), cuotas, mora, rescisión y ajuste periódico por ICL con caché de contingencia.")
+    ContainerDb(db_catalogo, "db-catalogo", "PostgreSQL 16", "Personas y roles, propiedades y zonas de precio de referencia.")
+    ContainerDb(db_contratos, "db-contratos", "PostgreSQL 16", "Contratos, ajustes, cuotas y caché de valores ICL.")
+    Container(promtail, "Promtail", "Grafana Promtail", "Recolecta los logs de los contenedores.")
+    ContainerDb(loki, "Loki", "Grafana Loki", "Almacena e indexa los logs.")
+    Container(grafana, "Grafana", "Grafana", "Consulta de logs y trazas por X-Correlation-ID.")
 }
 
-' 1. Flujo de Autenticación de los Actores con Keycloak
-Rel(admin, keycloak, "Obtiene JWT (Rol: ADMINISTRADOR)", "OIDC / HTTPS")
-Rel(propietario, keycloak, "Obtiene JWT (Rol: PROPIETARIO)", "OIDC / HTTPS")
-Rel(inquilino, keycloak, "Obtiene JWT (Rol: INQUILINO)", "OIDC / HTTPS")
+Rel(admin, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(propietario, keycloak, "Se autentica y obtiene token", "OIDC")
+Rel(inquilino, keycloak, "Se autentica y obtiene token", "OIDC")
 
-' 2. Interacción de los Actores hacia el API Gateway
-Rel(admin, api_gateway, "Registra propiedades/personas y opera contratos", "REST (GET, POST, PUT, PATCH) + Bearer JWT")
-Rel(propietario, api_gateway, "Consulta sus propiedades y contratos de esas propiedades", "REST (Solo GET) + Bearer JWT")
-Rel(inquilino, api_gateway, "Consulta únicamente sus propios contratos de alquiler", "REST (Solo GET) + Bearer JWT")
+Rel(admin, api_gateway, "Opera el sistema", "HTTPS / REST + JWT")
+Rel(propietario, api_gateway, "Consulta su información (solo GET)", "HTTPS / REST + JWT")
+Rel(inquilino, api_gateway, "Consulta su información (solo GET)", "HTTPS / REST + JWT")
+Rel(admin, grafana, "Consulta logs", "HTTP")
 
-' 3. Validación del Gateway con Keycloak y Enrutamiento interno
-Rel(api_gateway, keycloak, "Valida firma del JWT y roles (JWK Set URI)", "HTTPS")
-Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/** y /api/personas/**", "HTTP + TokenRelay")
-Rel(api_gateway, ms_contratos, "Enruta /api/contratos/**", "HTTP + TokenRelay")
+Rel(api_gateway, keycloak, "Obtiene claves públicas para validar tokens", "HTTPS / JWKS")
+Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/~*~* y /api/personas/~*~*", "HTTP / REST + TokenRelay")
+Rel(api_gateway, ms_contratos, "Enruta /api/contratos/~*~* y /api/cuotas/~*~*", "HTTP / REST + TokenRelay")
 
-' 4. Colaboración funcional entre Microservicios
-Rel_R(ms_contratos, ms_catalogo, "1) Valida propiedad DISPONIBLE, solvencia de garante y obtiene propietarioId\n2) Cambia estado a RESERVADA / ALQUILADA / DISPONIBLE", "Spring RestClient / HTTP")
+Rel(ms_contratos, ms_catalogo, "Consulta propiedad y solvencia del garante, cambia estado de ocupación", "HTTP / REST (RestClient)")
+Rel(ms_contratos, keycloak, "Obtiene token de servicio", "OAuth2 Client Credentials")
 
-' 5. Uso del Componente Común (.jar)
-Rel_D(ms_catalogo, commons_jar, "Importa dependencia en pom.xml", "Maven .jar")
-Rel_D(ms_contratos, commons_jar, "Importa dependencia en pom.xml", "Maven .jar")
+Rel(ms_catalogo, db_catalogo, "Lee y escribe", "JPA / JDBC")
+Rel(ms_contratos, db_contratos, "Lee y escribe", "JPA / JDBC")
 
-' 6. Persistencia en Bases de Datos
-Rel_D(ms_catalogo, db_catalogo, "Lee y escribe entidades", "Spring Data JPA / JDBC")
-Rel_D(ms_contratos, db_contratos, "Lee y escribe entidades", "Spring Data JPA / JDBC")
+Rel(ms_catalogo, georef, "Normaliza direcciones", "HTTPS / REST")
+Rel(ms_catalogo, bcra_deudores, "Consulta situación crediticia", "HTTPS / REST")
+Rel(ms_contratos, bcra_estadisticas, "Obtiene valores del ICL", "HTTPS / REST")
 
-' 7. Consumo de APIs Públicas Externas
-Rel(ms_catalogo, api_georef, "Normaliza dirección y obtiene lat/lon en alta de propiedad", "RestClient / HTTPS")
-Rel(ms_catalogo, api_bcra, "Verifica situación crediticia del garante por CUIT", "RestClient / HTTPS")
-Rel(ms_contratos, api_bcra, "Obtiene variación del índice ICL entre fechas para aplicar ajuste", "RestClient / HTTPS")
+Rel(promtail, loki, "Envía logs", "HTTP")
+Rel(grafana, loki, "Consulta logs", "LogQL / HTTP")
 
-' 8. Flujo de Centralización de Logs y Observabilidad (Stack PLG)
-Rel_D(api_gateway, promtail, "Emite logs a stdout", "Docker stdout")
-Rel_D(ms_catalogo, promtail, "Emite logs a stdout", "Docker stdout")
-Rel_D(ms_contratos, promtail, "Emite logs a stdout", "Docker stdout")
-Rel(promtail, loki, "Despacha flujos de logs", "HTTP / Push :3100")
-Rel(grafana, loki, "Consulta logs por labels y X-Correlation-ID", "LogQL :3100")
-Rel(admin, grafana, "Audita logs y trazas de error", "Web UI / HTTP :3000")
+SHOW_LEGEND()
+@enduml
+```
+
+# Diagrama Entidad-Relación (DER)
+
+![DER - Database per Service](./img/DER.png)
+
+```plantuml
+@startuml DER
+' Diagrama Entidad-Relación - notación pata de gallo (Information Engineering)
+hide circle
+skinparam linetype polyline
+skinparam nodesep 80
+skinparam ranksep 60
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam class {
+    BackgroundColor #FFFFFF
+    BorderColor #2B2D42
+    ArrowColor #2B2D42
+}
+skinparam package {
+    BorderColor #6C757D
+    BackgroundColor #F8F9FA
+}
+
+title DER - Alquileres Roveda SA (Database per Service)
+
+package "catalogo_db (PostgreSQL 16) - administrada por ms-catalogo-inmobiliario" {
+
+    entity "personas" as personas {
+        * id : BIGSERIAL <<PK>>
+        --
+        keycloak_user_id : VARCHAR <<UK>>
+        * cuit_cuil : VARCHAR(11) <<UK>>
+        * nombre : VARCHAR
+        * apellido : VARCHAR
+        email : VARCHAR <<UK>>
+        telefono : VARCHAR
+        ingresos_mensuales_declarados : NUMERIC(15,2)
+        situacion_crediticia_bcra : INTEGER
+        cheques_rechazados : INTEGER
+        fecha_consulta_bcra : TIMESTAMP
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "persona_roles" as persona_roles {
+        * persona_id : BIGINT <<PK, FK>>
+        * rol : VARCHAR(20) <<PK>>
+        --
+        rol IN (PROPIETARIO, INQUILINO, GARANTE)
+    }
+
+    entity "propiedades" as propiedades {
+        * id : BIGSERIAL <<PK>>
+        --
+        * codigo : VARCHAR(20) <<UK>>
+        * tipologia : VARCHAR(30)
+        * calle : VARCHAR
+        * numero : VARCHAR(20)
+        piso : VARCHAR(10)
+        departamento : VARCHAR(10)
+        barrio : VARCHAR
+        * ciudad : VARCHAR(100)
+        * provincia : VARCHAR(100)
+        codigo_postal : VARCHAR(10)
+        direccion_normalizada : VARCHAR
+        latitud : DOUBLE
+        longitud : DOUBLE
+        * superficie_total_m2 : NUMERIC(10,2)
+        superficie_cubierta_m2 : NUMERIC(10,2)
+        precio_sugerido_m2 : NUMERIC(15,2)
+        canon_base_sugerido : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        * version : BIGINT
+        zona_referencia_id : BIGINT <<FK>>
+        * propietario_id : BIGINT <<FK>>
+        inquilino_id : BIGINT <<FK>>
+        garante_id : BIGINT <<FK>>
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "precios_referencia_zona" as zonas {
+        * id : BIGSERIAL <<PK>>
+        --
+        * nombre_zona : VARCHAR(100)
+        * provincia : VARCHAR(100)
+        * ciudad : VARCHAR(100)
+        * provincia_normalizada : VARCHAR(100)
+        * ciudad_normalizada : VARCHAR(100)
+        latitud_centro : DOUBLE
+        longitud_centro : DOUBLE
+        radio_metros : INTEGER
+        * valor_m2 : NUMERIC(15,2)
+        * puntaje_zona : INTEGER
+        * fecha_actualizacion : DATE
+        UK (provincia_normalizada, ciudad_normalizada, nombre_zona)
+    }
+}
+
+package "contratos_db (PostgreSQL 16) - administrada por ms-contratos" {
+
+    entity "contratos" as contratos {
+        * id : BIGSERIAL <<PK>>
+        --
+        * nro_contrato : VARCHAR(20) <<UK>>
+        * propiedad_id : BIGINT <<ref. lógica>>
+        * propietario_id : BIGINT <<ref. lógica>>
+        * inquilino_id : BIGINT <<ref. lógica>>
+        * garante_id : BIGINT <<ref. lógica>>
+        * propietario_keycloak_id : VARCHAR
+        * inquilino_keycloak_id : VARCHAR
+        * fecha_inicio : DATE
+        * fecha_fin : DATE
+        fecha_rescision : DATE
+        * frecuencia_ajuste_meses : INTEGER
+        * monto_inicial : NUMERIC(15,2)
+        * monto_actual : NUMERIC(15,2)
+        * porcentaje_mora_diaria : NUMERIC(7,4)
+        * dia_vencimiento_mes : INTEGER
+        monto_senia : NUMERIC(15,2)
+        fecha_limite_senia : DATE
+        motivo_cancelacion : VARCHAR
+        senia_retenida : BOOLEAN
+        penalizacion_rescision : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        * version : BIGINT
+        * fecha_alta : TIMESTAMP
+        fecha_modificacion : TIMESTAMP
+    }
+
+    entity "ajustes" as ajustes {
+        * id : BIGSERIAL <<PK>>
+        --
+        * contrato_id : BIGINT <<FK>>
+        * fecha_aplicacion : DATE
+        * fecha_indice_desde : DATE
+        * fecha_indice_hasta : DATE
+        * valor_indice_desde : NUMERIC(19,6)
+        * valor_indice_hasta : NUMERIC(19,6)
+        * monto_anterior : NUMERIC(15,2)
+        * monto_nuevo : NUMERIC(15,2)
+        * porcentaje_variacion : NUMERIC(9,4)
+        UK (contrato_id, fecha_indice_hasta)
+    }
+
+    entity "cuotas" as cuotas {
+        * id : BIGSERIAL <<PK>>
+        --
+        * contrato_id : BIGINT <<FK>>
+        ajuste_id : BIGINT <<FK>>
+        * nro_cuota : INTEGER
+        * periodo_mes : INTEGER
+        * periodo_anio : INTEGER
+        * fecha_vencimiento : DATE
+        * monto_base : NUMERIC(15,2)
+        * estado : VARCHAR(20)
+        fecha_pago : DATE
+        UK (contrato_id, nro_cuota)
+    }
+
+    entity "indices_icl_cache" as icl {
+        * id : BIGSERIAL <<PK>>
+        --
+        * fecha : DATE <<UK>>
+        * valor : NUMERIC(19,6)
+        * fecha_consulta : TIMESTAMP
+    }
+}
+
+personas ||--|{ persona_roles : "tiene"
+personas ||--o{ propiedades : "es propietario de"
+personas |o--o{ propiedades : "es inquilino de"
+personas |o--o{ propiedades : "es garante de"
+zonas |o--o{ propiedades : "valoriza"
+
+contratos ||--o{ ajustes : "registra"
+contratos ||--o{ cuotas : "genera"
+ajustes |o--o{ cuotas : "origina el lote de"
+
+propiedades .. contratos : "referencia lógica por id\n(sin FK entre bases, se valida vía API)"
 
 @enduml
 ```
