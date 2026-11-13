@@ -40,6 +40,16 @@ georef:
     connect-timeout-ms: 3000
     read-timeout-ms: 5000
 
+# Integracion externa BCRA - Central de Deudores (evaluacion de solvencia del garante, F-08)
+bcra:
+  api:
+    base-url: https://api.bcra.gob.ar
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
+  solvencia:
+    # RN-07: solvente con situacion crediticia 1 o 2 (y 0 cheques rechazados)
+    situacion-maxima: 2
+
 logging:
   level:
     com.rovedasa.catalogo: DEBUG
