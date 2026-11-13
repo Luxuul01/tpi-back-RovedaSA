@@ -431,7 +431,7 @@ Estado al 03/11/2026. Ir tachando a medida que se resuelven.
 - [ ] `application-docker.yml` en cada servicio (hostnames de la red Docker en lugar de `localhost`). Mantener `jwk-set-uri`.
 
 ### Catálogo (Dev 2)
-- [ ] `POST /api/personas/{id}/evaluacion-solvencia`, con el cliente BCRA Central de Deudores (coordinar con Dev 4).
+- [x] `POST /api/personas/{id}/evaluacion-solvencia`, con el cliente BCRA Central de Deudores (coordinar con Dev 4).
 - [x] `PUT /api/propiedades/{id}`.
 - [x] `PATCH /api/propiedades/{id}/baja`.
 - [ ] Opcional: devolver 409 en lugar de 400 ante transiciones de estado inválidas.
