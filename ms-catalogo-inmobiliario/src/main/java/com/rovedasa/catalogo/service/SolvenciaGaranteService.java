@@ -36,7 +36,10 @@ public class SolvenciaGaranteService {
     private final BcraCentralDeudoresClient bcraClient;
     private final EvaluadorSolvencia evaluador;
 
-    public ValidacionGaranteDTO evaluar(String cuitCuil, BigDecimal ingresosDeclarados, BigDecimal canonMensual) {
+    /**
+     * @param ingresosDeclarados solo se informa en la respuesta; RN-07 no lo usa para decidir
+     */
+    public ValidacionGaranteDTO evaluar(String cuitCuil, BigDecimal ingresosDeclarados) {
         String cuit = normalizarCuit(cuitCuil);
         log.debug("Evaluando solvencia de garante con CUIT terminado en {}", cuit.substring(7));
 
@@ -59,7 +62,7 @@ public class SolvenciaGaranteService {
                 .orElse(null);
 
         EvaluadorSolvencia.Resultado resultado =
-                evaluador.evaluar(situacion, cantidadCheques, ingresosDeclarados, canonMensual);
+                evaluador.evaluar(situacion, cantidadCheques);
 
         log.info("Garante CUIT ***{} evaluado: solvente={} (situación {}, cheques rechazados {})",
                 cuit.substring(7), resultado.esSolvente(), situacion, cantidadCheques);

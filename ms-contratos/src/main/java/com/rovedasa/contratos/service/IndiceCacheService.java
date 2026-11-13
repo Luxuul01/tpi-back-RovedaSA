@@ -6,6 +6,7 @@ import com.rovedasa.contratos.model.TipoIndiceEnum;
 import com.rovedasa.contratos.repository.IndiceCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,14 @@ public class IndiceCacheService {
             repository.save(registro);
         }
         log.debug("Caché de índices actualizado: {} valores de {}", valores.size(), tipo);
+    }
+
+    /** Último valor guardado en o antes de la fecha, sin límite hacia atrás (0 o 1 elemento). */
+    @Transactional(readOnly = true)
+    public List<BcraValorDTO> buscarUltimoHasta(TipoIndiceEnum tipo, LocalDate hasta) {
+        return repository.buscarHasta(tipo, hasta, PageRequest.of(0, 1)).stream()
+                .map(i -> new BcraValorDTO(i.getFecha(), i.getValor()))
+                .toList();
     }
 
     /** Valores guardados entre dos fechas, del más reciente al más viejo. */

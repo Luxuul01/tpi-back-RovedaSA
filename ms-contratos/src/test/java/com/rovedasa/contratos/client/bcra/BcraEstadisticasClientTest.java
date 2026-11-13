@@ -73,4 +73,36 @@ class BcraEstadisticasClientTest {
         assertThrows(RestClientException.class,
                 () -> client.obtenerSerie(40, LocalDate.of(2026, 10, 24), LocalDate.of(2026, 10, 26)));
     }
+
+    @Test
+    @DisplayName("Último valor hasta una fecha: pide hasta=fecha y limit=1, sin 'desde'")
+    void obtenerUltimoValorOk() {
+        String json = """
+                {"status":200,"metadata":{"resultset":{"count":2315,"offset":0,"limit":1}},
+                 "results":[{"idVariable":40,"detalle":[{"fecha":"2026-11-01","valor":37.21000000000}]}]}
+                """;
+        server.expect(requestTo("https://api.bcra.gob.ar/estadisticas/v4.0/monetarias/40?hasta=2026-11-01&limit=1"))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        List<BcraValorDTO> valores = client.obtenerUltimoValor(40, LocalDate.of(2026, 11, 1));
+
+        assertAll(
+                () -> assertEquals(1, valores.size()),
+                () -> assertEquals(LocalDate.of(2026, 11, 1), valores.get(0).getFecha()),
+                () -> assertEquals(0, new BigDecimal("37.21").compareTo(valores.get(0).getValor())));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Sin valores hasta esa fecha (antes del inicio de la serie): lista vacía")
+    void obtenerUltimoValorSinDatos() {
+        String json = """
+                {"status":200,"metadata":{"resultset":{"count":0,"offset":0,"limit":1}},
+                 "results":[{"idVariable":40,"detalle":[]}]}
+                """;
+        server.expect(requestTo("https://api.bcra.gob.ar/estadisticas/v4.0/monetarias/40?hasta=2020-01-05&limit=1"))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        assertEquals(0, client.obtenerUltimoValor(40, LocalDate.of(2020, 1, 5)).size());
+    }
 }

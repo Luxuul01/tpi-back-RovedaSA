@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Obtención de índices (ICL e IPC) con resiliencia ante caídas del BCRA (RNF-03).
@@ -30,8 +31,11 @@ import java.util.List;
  *  1. Se consulta el BCRA. Si responde, cada valor recibido se guarda en indices_cache.
  *  2. Si el BCRA falla (caída, timeout, 5xx, 401/403, 429 por cuota agotada o respuesta inesperada)
  *     se registra un log.warn y se leen los valores de indices_cache (fallback de contingencia).
- *  3. Si tampoco hay valores en el caché dentro de la ventana de tolerancia, se lanza
- *     IndiceNoDisponibleException (503): no se aplica un ajuste con datos viejos.
+ *  3. Si tampoco hay valores en el caché, se lanza IndiceNoDisponibleException (503):
+ *     el ajuste queda pendiente (RN-12).
+ *
+ * Valor puntual (ICL): si no hay valor para la fecha exacta se toma el último publicado anterior,
+ * sin límite hacia atrás (Alcance, sección 14), tanto en el BCRA como en el caché.
  *
  * Los errores del pedido no son caídas y responden 400: fecha futura, un 400 o 404 del BCRA
  * o un rango en el que el BCRA respondió pero no tiene valores publicados.
@@ -43,18 +47,15 @@ public class IndiceService {
     private final BcraEstadisticasClient bcraClient;
     private final IndiceCacheService cacheService;
     private final CalculadoraAjuste calculadora;
-    private final int diasToleranciaIcl;
     private final int mesesToleranciaIpc;
 
     public IndiceService(BcraEstadisticasClient bcraClient,
                          IndiceCacheService cacheService,
                          CalculadoraAjuste calculadora,
-                         @Value("${bcra.indices.dias-tolerancia-icl:7}") int diasToleranciaIcl,
                          @Value("${bcra.indices.meses-tolerancia-ipc:2}") int mesesToleranciaIpc) {
         this.bcraClient = bcraClient;
         this.cacheService = cacheService;
         this.calculadora = calculadora;
-        this.diasToleranciaIcl = diasToleranciaIcl;
         this.mesesToleranciaIpc = mesesToleranciaIpc;
     }
 
@@ -66,22 +67,21 @@ public class IndiceService {
     // ------------------------------------------------------------------
 
     /**
-     * Último valor publicado del índice en o antes de la fecha pedida.
+     * Último valor publicado del índice en o antes de la fecha pedida, sin límite hacia atrás
+     * (Alcance, sección 14: si no hay valor para la fecha exacta, se toma el último publicado anterior).
      * ICL: valor diario. IPC: inflación del último mes publicado (en %).
+     * La respuesta indica la fecha real del valor (fechaIndice) y si salió del BCRA o del caché.
      */
     public ValorIndiceDTO obtenerValor(TipoIndiceEnum tipo, LocalDate fecha) {
         validarNoFutura(fecha);
-        LocalDate desde = (tipo == TipoIndiceEnum.ICL)
-                ? fecha.minusDays(diasToleranciaIcl)
-                : fecha.minusMonths(mesesToleranciaIpc + 1L).withDayOfMonth(1);
 
-        SerieConOrigen serie = obtenerSerie(tipo, desde, fecha);
+        SerieConOrigen serie = obtenerUltimo(tipo, fecha);
 
         BcraValorDTO valor = serie.valores().stream()
                 .filter(v -> !v.getFecha().isAfter(fecha))
                 .max(Comparator.comparing(BcraValorDTO::getFecha))
                 .orElseThrow(() -> sinDatos(serie.origen(),
-                        "No hay valor de " + tipo + " publicado entre " + desde + " y " + fecha));
+                        "No hay valor de " + tipo + " publicado en o antes del " + fecha));
 
         return ValorIndiceDTO.builder()
                 .tipoIndice(tipo)
@@ -215,23 +215,43 @@ public class IndiceService {
     // Resiliencia: BCRA primero, caché de contingencia si falla
     // ------------------------------------------------------------------
 
+    /** Serie entre dos fechas (la usa el IPC, que necesita varios meses). */
     SerieConOrigen obtenerSerie(TipoIndiceEnum tipo, LocalDate desde, LocalDate hasta) {
+        return consultar(tipo, "entre " + desde + " y " + hasta,
+                () -> bcraClient.obtenerSerie(tipo.getIdVariableBcra(), desde, hasta),
+                () -> cacheService.buscarEntreFechas(tipo, desde, hasta));
+    }
+
+    /** Último valor publicado en o antes de la fecha, sin límite hacia atrás (0 o 1 valor). */
+    SerieConOrigen obtenerUltimo(TipoIndiceEnum tipo, LocalDate hasta) {
+        return consultar(tipo, "hasta " + hasta,
+                () -> bcraClient.obtenerUltimoValor(tipo.getIdVariableBcra(), hasta),
+                () -> cacheService.buscarUltimoHasta(tipo, hasta));
+    }
+
+    /**
+     * BCRA primero; si falla, el caché de contingencia (RN-12).
+     * Lo que se recibe del BCRA se guarda en el caché para la próxima caída.
+     */
+    private SerieConOrigen consultar(TipoIndiceEnum tipo, String rango,
+                                     Supplier<List<BcraValorDTO>> consultaBcra,
+                                     Supplier<List<BcraValorDTO>> consultaCache) {
         List<BcraValorDTO> valores;
         try {
-            valores = bcraClient.obtenerSerie(tipo.getIdVariableBcra(), desde, hasta);
+            valores = consultaBcra.get();
         } catch (HttpClientErrorException ex) {
             int status = ex.getStatusCode().value();
             if (status == HttpStatus.BAD_REQUEST.value() || status == HttpStatus.NOT_FOUND.value()) {
                 // 400/404: el BCRA dice que el pedido está mal (parámetro o variable inválidos).
                 // No es una caída: no se usa el caché
-                log.warn("El BCRA rechazó la consulta de {} entre {} y {}: {}", tipo, desde, hasta, ex.getStatusCode());
-                throw new OperacionInvalidaException("El BCRA rechazó la consulta de " + tipo + " entre "
-                        + desde + " y " + hasta + " (" + status + ")");
+                log.warn("El BCRA rechazó la consulta de {} {}: {}", tipo, rango, ex.getStatusCode());
+                throw new OperacionInvalidaException("El BCRA rechazó la consulta de " + tipo + " "
+                        + rango + " (" + status + ")");
             }
             // 401, 403, 429 (cuota agotada) y el resto: problema del lado del BCRA, se usa el caché
-            return usarCache(tipo, desde, hasta, ex);
+            return usarCache(tipo, rango, consultaCache, ex);
         } catch (RestClientException ex) {
-            return usarCache(tipo, desde, hasta, ex);
+            return usarCache(tipo, rango, consultaCache, ex);
         }
 
         // Si falla guardar en el caché, la consulta igual se responde con el dato del BCRA
@@ -243,11 +263,11 @@ public class IndiceService {
         return new SerieConOrigen(valores, OrigenDatoEnum.BCRA);
     }
 
-    private SerieConOrigen usarCache(TipoIndiceEnum tipo, LocalDate desde, LocalDate hasta, RestClientException causa) {
-        log.warn("API de BCRA no disponible para {} entre {} y {}. Utilizando caché local de contingencia. Causa: {}",
-                tipo, desde, hasta, causa.getMessage());
-        List<BcraValorDTO> valoresCache = cacheService.buscarEntreFechas(tipo, desde, hasta);
-        return new SerieConOrigen(valoresCache, OrigenDatoEnum.CACHE_CONTINGENCIA);
+    private SerieConOrigen usarCache(TipoIndiceEnum tipo, String rango,
+                                     Supplier<List<BcraValorDTO>> consultaCache, RestClientException causa) {
+        log.warn("API de BCRA no disponible para {} {}. Utilizando caché local de contingencia. Causa: {}",
+                tipo, rango, causa.getMessage());
+        return new SerieConOrigen(consultaCache.get(), OrigenDatoEnum.CACHE_CONTINGENCIA);
     }
 
     /** El BCRA no publica índices de fechas que todavía no pasaron (y responde 400). */

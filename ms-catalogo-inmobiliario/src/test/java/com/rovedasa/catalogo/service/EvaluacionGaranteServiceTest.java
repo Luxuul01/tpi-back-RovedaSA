@@ -71,9 +71,9 @@ class EvaluacionGaranteServiceTest {
 
     @BeforeEach
     void prepararServicio() {
-        // Valores por defecto de application.yml: situación máxima 2, 0 cheques, múltiplo 3 (no se usa: canon null)
+        // Valores por defecto de application.yml: situación máxima 2 y 0 cheques rechazados (RN-07)
         SolvenciaGaranteService solvencia = new SolvenciaGaranteService(bcraClient,
-                new EvaluadorSolvencia(2, 0, new BigDecimal("3")));
+                new EvaluadorSolvencia(2, 0));
         servicio = new EvaluacionGaranteService(personaRepository, solvencia, RELOJ_FIJO, transactionManager);
     }
 
@@ -101,7 +101,7 @@ class EvaluacionGaranteServiceTest {
         verify(transactionManager, times(2)).commit(any());
     }
 
-    // canonMensual en null: la regla de ingresos no se aplica y la evaluación es exactamente RN-07
+    // RN-07 no usa los ingresos: sin ingresos declarados igual califica si la situación y los cheques dan bien
     @Test
     void sinIngresosDeclaradosIgualEsSolventePorqueNoSeEvaluanIngresos() {
         persona(TipoPersonaEnum.GARANTE, null);
@@ -111,7 +111,7 @@ class EvaluacionGaranteServiceTest {
         ValidacionGaranteDTO resultado = servicio.evaluar(PERSONA_ID);
 
         assertTrue(resultado.getEsSolvente());
-        assertTrue(resultado.getMotivoEvaluacion().contains("ingresos no evaluados"));
+        assertFalse(resultado.getMotivoEvaluacion().contains("ingreso"));
         // Sin registros en el BCRA no hay denominación: se usa el nombre del catálogo
         assertEquals("Marcos Díaz", resultado.getNombreCompleto());
     }
