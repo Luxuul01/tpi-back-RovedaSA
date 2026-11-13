@@ -1,6 +1,6 @@
 package com.rovedasa.catalogo.exception;
 
-import com.rovedasa.catalogo.controller.EvaluacionGaranteController;
+import com.rovedasa.catalogo.controller.PersonaController;
 import com.rovedasa.commons.exception.ApiError;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -16,12 +16,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.time.LocalDateTime;
 
 /**
- * Errores propios de la evaluación de garantes. Acotado a EvaluacionGaranteController y con
+ * Errores propios de la evaluación de garantes. Acotado a PersonaController y con
  * prioridad sobre el GlobalExceptionHandler de commons (que no contempla el 503).
  */
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = EvaluacionGaranteController.class)
+@RestControllerAdvice(assignableTypes = PersonaController.class)
 public class BcraExceptionHandler {
 
     @ExceptionHandler(BcraNoDisponibleException.class)
