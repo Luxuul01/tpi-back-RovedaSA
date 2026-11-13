@@ -9,6 +9,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -56,17 +58,33 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, RUTAS_API).hasRole(ROL_ADMINISTRADOR)
                 .anyRequest().authenticated()
             )
-            .exceptionHandling(excepciones -> excepciones.accessDeniedHandler(accesoDenegadoComoApiError()))
+            // Sin token: lo corta el ExceptionTranslationFilter con este entry point
+            .exceptionHandling(excepciones -> excepciones
+                .authenticationEntryPoint(noAutenticadoComoApiError())
+                .accessDeniedHandler(accesoDenegadoComoApiError()))
+            // Token inválido o vencido: lo corta el filtro de bearer token, que usa su propio entry point
             .oauth2ResourceServer(oauth2 -> oauth2
+                .authenticationEntryPoint(noAutenticadoComoApiError())
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakRoleConverter()))
             );
         return http.build();
     }
 
-    /**
-     * Un 403 de la cadena de filtros saldría con el body vacío. Se delega al @RestControllerAdvice
-     * (CatalogoExceptionHandler) para que tenga el mismo ApiError que el 403 de un @PreAuthorize.
+    /*
+     * Los 401 y 403 de la cadena de filtros saldrían con el body vacío. Se delegan al @RestControllerAdvice
+     * (CatalogoExceptionHandler) para que salgan con el mismo ApiError (y correlationId) que el resto de los errores.
      */
+
+    // Primero el entry point estándar de Spring: pone el header WWW-Authenticate: Bearer (RFC 6750),
+    // con el detalle del error si el token era inválido. Después el handler escribe el ApiError.
+    private AuthenticationEntryPoint noAutenticadoComoApiError() {
+        BearerTokenAuthenticationEntryPoint entryPointBearer = new BearerTokenAuthenticationEntryPoint();
+        return (request, response, excepcion) -> {
+            entryPointBearer.commence(request, response, excepcion);
+            resolutorDeExcepciones.resolveException(request, response, null, excepcion);
+        };
+    }
+
     private AccessDeniedHandler accesoDenegadoComoApiError() {
         return (request, response, excepcion) ->
                 resolutorDeExcepciones.resolveException(request, response, null, excepcion);

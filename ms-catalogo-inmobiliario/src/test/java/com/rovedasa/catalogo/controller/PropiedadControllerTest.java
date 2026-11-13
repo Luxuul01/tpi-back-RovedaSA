@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.math.BigDecimal;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,6 +53,8 @@ class PropiedadControllerTest {
 
     private static final String SUB_PROPIETARIO = "00000000-0000-0000-0000-000000000002";
     private static final String CUERPO_RESERVAR = "{\"nuevoEstado\": \"RESERVADA\"}";
+    private static final String MENSAJE_NO_AUTENTICADO =
+            "Se requiere un token de acceso válido para acceder a este recurso";
     // Cuerpo válido: los 403 tienen que salir por el rol, no por la validación
     private static final String CUERPO_MODIFICAR = """
             {"tipologia": "CASA", "calle": "Independencia", "numero": "900", "ciudad": "Córdoba",
@@ -306,6 +310,38 @@ class PropiedadControllerTest {
     void propiasSinTokenDevuelve401() throws Exception {
         mockMvc.perform(get("/api/propiedades/propias"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // --- 401 con formato ApiError ---
+
+    // Sin token: lo corta el ExceptionTranslationFilter y el entry point lo deriva a CatalogoExceptionHandler
+    @Test
+    void sinTokenDevuelve401ConApiError() throws Exception {
+        mockMvc.perform(get("/api/propiedades/{id}", 10L).header("X-Correlation-ID", "corr-test-401"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.message").value(MENSAJE_NO_AUTENTICADO))
+                .andExpect(jsonPath("$.path").value("/api/propiedades/10"))
+                .andExpect(jsonPath("$.correlationId").value("corr-test-401"));
+
+        verifyNoInteractions(propiedadService);
+    }
+
+    // Token mal formado: lo corta el filtro de bearer token (otro entry point) antes de buscar las claves de Keycloak
+    @Test
+    void tokenMalFormadoDevuelve401ConApiError() throws Exception {
+        mockMvc.perform(get("/api/propiedades/{id}", 10L)
+                        .header("Authorization", "Bearer esto-no-es-un-jwt")
+                        .header("X-Correlation-ID", "corr-test-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", containsString("invalid_token")))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value(MENSAJE_NO_AUTENTICADO))
+                .andExpect(jsonPath("$.correlationId").value("corr-test-token"));
+
+        verifyNoInteractions(propiedadService);
     }
 
     // --- Rutas públicas ---
