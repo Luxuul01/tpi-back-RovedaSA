@@ -38,3 +38,12 @@ bcra:
 logging:
   level:
     com.rovedasa.contratos: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when_authorized

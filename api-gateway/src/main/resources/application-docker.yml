@@ -1,0 +1,10 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/realms/rovedasa-realm/protocol/openid-connect/certs
+
+rovedasa-gw:
+  url-microservicio-catalogo: http://ms-catalogo-inmobiliario:8081
+  url-microservicio-contratos: http://ms-contratos:8082

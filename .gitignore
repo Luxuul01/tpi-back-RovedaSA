@@ -32,6 +32,7 @@ target/
 
 ### Logs & Env ###
 *.log
+logs/
 .env
 .DS_Store
 Thumbs.db

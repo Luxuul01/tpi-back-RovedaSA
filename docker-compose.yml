@@ -46,6 +46,7 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
     command: start-dev --import-realm
     ports:
       - "8083:8080"
@@ -53,6 +54,97 @@ services:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks:
       - tpi-network
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r line <&3 && [[ \"$$line\" == *200* ]]"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ==========================================
+  # Microservicios y API Gateway (Spring Boot)
+  # ==========================================
+  ms-catalogo-inmobiliario:
+    build:
+      context: .
+      dockerfile: ms-catalogo-inmobiliario/Dockerfile
+    container_name: tpi-ms-catalogo
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./logs/catalogo:/app/logs
+    networks:
+      - tpi-network
+    depends_on:
+      db-catalogo:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  ms-contratos:
+    build:
+      context: .
+      dockerfile: ms-contratos/Dockerfile
+    container_name: tpi-ms-contratos
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./logs/contratos:/app/logs
+    networks:
+      - tpi-network
+    depends_on:
+      db-contratos:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      ms-catalogo-inmobiliario:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: tpi-api-gateway
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs/gateway:/app/logs
+    networks:
+      - tpi-network
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      ms-catalogo-inmobiliario:
+        condition: service_healthy
+      ms-contratos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   # ==========================================
   # Observabilidad y Centralización de Logs (PLG Stack)

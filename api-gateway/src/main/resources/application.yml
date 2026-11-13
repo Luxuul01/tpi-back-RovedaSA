@@ -20,3 +20,12 @@ logging:
   level:
     org.springframework.cloud.gateway: INFO
     org.springframework.security: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when_authorized

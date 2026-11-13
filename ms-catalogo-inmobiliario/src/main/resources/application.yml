@@ -41,3 +41,12 @@ georef:
 logging:
   level:
     com.rovedasa.catalogo: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when_authorized

@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://db-catalogo:5432/catalogo_db
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/realms/rovedasa-realm/protocol/openid-connect/certs
