@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -168,6 +169,24 @@ class PropiedadControllerTest {
         verifyNoInteractions(propiedadService);
     }
 
+    // La regla por URL de SecurityConfig corta antes de que Spring MVC valide el body
+    @Test
+    void putConInquilinoYCuerpoInvalidoDevuelve403YNo400() throws Exception {
+        String cuerpoInvalido = """
+                {"tipologia": "CASA", "numero": "900", "ciudad": "Córdoba", "provincia": "Córdoba",
+                 "superficieTotalM2": -5}
+                """;
+
+        mockMvc.perform(put(10L, cuerpoInvalido).with(conRol("INQUILINO")))
+                .andExpect(status().isForbidden())
+                // Mismo ApiError que el 403 de un @PreAuthorize, sin detalle de validación
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value("No tenés permisos para realizar esta operación"))
+                .andExpect(jsonPath("$.validaciones").doesNotExist());
+
+        verifyNoInteractions(propiedadService);
+    }
+
     @Test
     void putSobrePropiedadReservadaDevuelve400ConElMensajeDelServicio() throws Exception {
         String mensaje = "No se puede modificar la propiedad PROP-AAAA0001: está RESERVADA y hay un contrato "
@@ -287,6 +306,18 @@ class PropiedadControllerTest {
     void propiasSinTokenDevuelve401() throws Exception {
         mockMvc.perform(get("/api/propiedades/propias"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // --- Rutas públicas ---
+
+    // En @WebMvcTest no están Swagger ni Actuator (darían 404): lo que se verifica es que la seguridad no las frena
+    @Test
+    void swaggerYHealthNoExigenToken() throws Exception {
+        for (String ruta : List.of("/v3/api-docs", "/swagger-ui/index.html", "/actuator/health")) {
+            int status = mockMvc.perform(get(ruta)).andReturn().getResponse().getStatus();
+            assertNotEquals(401, status, ruta);
+            assertNotEquals(403, status, ruta);
+        }
     }
 
     // --- Datos de prueba ---
