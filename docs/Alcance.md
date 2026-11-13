@@ -318,7 +318,7 @@ Imagen y definición PlantUML: [Diagramas.md — DER](./Diagramas.md#diagrama-en
 
 - Perfil por defecto: todo apunta a `localhost`.
 - Perfil `docker`: usa los nombres de servicio de la red interna.
-- Perfil `local`: solo para desarrollo del catálogo, con la seguridad desactivada.
+- Perfil `local`: solo para desarrollo del catálogo; baja el nivel de log de seguridad. La seguridad es la misma que en los demás perfiles (exige JWT de Keycloak).
 - Las variables de entorno sobrescriben la configuración.
 - Se mantiene `jwk-set-uri` (no `issuer-uri`) para que los tokens obtenidos desde el host valgan dentro de Docker.
 
