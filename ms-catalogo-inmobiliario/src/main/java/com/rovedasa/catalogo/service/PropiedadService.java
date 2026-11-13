@@ -3,6 +3,7 @@ package com.rovedasa.catalogo.service;
 import com.rovedasa.catalogo.client.georef.DireccionNormalizada;
 import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
+import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.mapper.PropiedadMapper;
 import com.rovedasa.catalogo.model.Persona;
@@ -29,7 +30,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Alta, consulta y cambios de estado de propiedades (CU-01 y CU-08).
+ * Alta, consulta, modificación, baja lógica y cambios de estado de propiedades (CU-01, CU-08 y F-06).
  */
 @Slf4j
 @Service
@@ -39,7 +40,7 @@ public class PropiedadService {
     private final PersonaRepository personaRepository;
     private final GeoRefClient geoRefClient;
     private final TasacionService tasacionService;
-    // registrar() maneja sus transacciones a mano para no tener una conexión tomada durante la llamada a GeoRef
+    // registrar() y modificar() manejan sus transacciones a mano para no tener una conexión tomada durante GeoRef
     private final TransactionTemplate transaccionLectura;
     private final TransactionTemplate transaccionEscritura;
 
@@ -92,19 +93,10 @@ public class PropiedadService {
                 .build();
 
         // 3. GeoRef, fuera de toda transacción
-        DireccionNormalizada direccion = geoRefClient
-                .normalizar(propiedad.getCalle(), propiedad.getNumero(), propiedad.getProvincia(), propiedad.getCiudad())
-                .orElseThrow(() -> new OperacionInvalidaException(String.format(
-                        "No se pudo normalizar la dirección '%s %s' en %s, %s. Verificá la calle, la altura y que "
-                                + "la ciudad sea el nombre oficial de la localidad (por ejemplo 'Córdoba', no 'Córdoba Capital')",
-                        propiedad.getCalle(), propiedad.getNumero(), propiedad.getCiudad(), propiedad.getProvincia())));
+        normalizarDireccion(propiedad);
 
-        // 4. Normalización y tasación
-        propiedad.aplicarNormalizacion(direccion.nomenclatura(), direccion.provincia(), direccion.ciudad(),
-                direccion.latitud(), direccion.longitud());
-        Tasacion tasacion = tasacionService.tasar(direccion.latitud(), direccion.longitud(),
-                direccion.provincia(), direccion.ciudad(), propiedad.getTipologia(), propiedad.superficieComputableM2());
-        propiedad.aplicarTasacion(tasacion.zona(), tasacion.precioSugeridoM2(), tasacion.canonBaseSugerido());
+        // 4. Tasación con las coordenadas y los nombres oficiales que devolvió GeoRef
+        Tasacion tasacion = tasar(propiedad);
 
         // 5. Transacción corta de escritura
         Propiedad guardada = transaccionEscritura.execute(estado -> propiedadRepository.save(propiedad));
@@ -113,6 +105,66 @@ public class PropiedadService {
                 guardada.getId(), tasacion.tieneCobertura() ? tasacion.zona().getNombreZona() : "sin cobertura",
                 guardada.getCanonBaseSugerido());
         return PropiedadMapper.aResponse(guardada);
+    }
+
+    /**
+     * Modificación de los datos descriptivos (F-06). Solo DISPONIBLE o INACTIVA (lo valida la entidad).
+     *
+     * Mismo esquema de transacciones que registrar(), por el mismo motivo (GeoRef puede tardar segundos):
+     *   1. Lectura: buscar la propiedad.
+     *   2. Fuera de toda transacción: aplicar los cambios; si cambió la dirección, normalizar con GeoRef;
+     *      tasar siempre, con las coordenadas que corresponda (las nuevas o las que ya tenía).
+     *   3. Escritura: guardar y armar la respuesta.
+     * La propiedad llega al paso 3 "detached", así que save() hace merge: si mientras tanto alguien la cambió
+     * (por ejemplo ms-contratos la reservó), el @Version no coincide y el merge falla con 409. La respuesta se
+     * arma dentro de esa transacción porque el propietario es LAZY y su proxy no se puede inicializar fuera.
+     */
+    public PropiedadResponse modificar(Long id, ModificarPropiedadRequest solicitud) {
+        // 1. Transacción corta de lectura
+        Propiedad propiedad = transaccionLectura.execute(estado -> buscar(id));
+
+        // 2. La entidad rechaza RESERVADA/ALQUILADA antes de tocar nada (y antes de llamar a GeoRef)
+        propiedad.actualizarDatosDescriptivos(
+                solicitud.tipologia(),
+                solicitud.calle().trim(),
+                solicitud.numero().trim(),
+                NormalizadorTexto.limpiarOpcional(solicitud.piso()),
+                NormalizadorTexto.limpiarOpcional(solicitud.departamento()),
+                NormalizadorTexto.limpiarOpcional(solicitud.barrio()),
+                NormalizadorTexto.limpiarOpcional(solicitud.codigoPostal()),
+                solicitud.ciudad().trim(),
+                solicitud.provincia().trim(),
+                solicitud.superficieTotalM2(),
+                solicitud.superficieCubiertaM2());
+
+        // Si cambió la dirección, la entidad descartó la normalización anterior
+        boolean renormalizada = !propiedad.estaNormalizada();
+        if (renormalizada) {
+            normalizarDireccion(propiedad);
+        }
+        Tasacion tasacion = tasar(propiedad);
+
+        // 3. Transacción corta de escritura
+        PropiedadResponse respuesta = transaccionEscritura.execute(
+                estado -> PropiedadMapper.aResponse(propiedadRepository.save(propiedad)));
+
+        log.info("Propiedad {} (ID: {}) modificada{}; zona {} y canon sugerido {}", respuesta.codigo(), id,
+                renormalizada ? " con dirección nueva normalizada por GeoRef" : " sin cambio de dirección",
+                tasacion.tieneCobertura() ? tasacion.zona().getNombreZona() : "sin cobertura",
+                respuesta.canonBaseSugerido());
+        return respuesta;
+    }
+
+    /**
+     * Baja lógica (F-06, RN-05): DISPONIBLE -> INACTIVA. La entidad rechaza cualquier otro estado con
+     * OperacionInvalidaException (400). No hay reactivación por API: no está en el alcance.
+     */
+    @Transactional
+    public PropiedadResponse darDeBaja(Long id) {
+        Propiedad propiedad = buscar(id);
+        propiedad.inactivar();
+        log.info("Propiedad {} (ID: {}) dada de baja: pasó a INACTIVA", propiedad.getCodigo(), id);
+        return PropiedadMapper.aResponse(propiedad);
     }
 
     @Transactional(readOnly = true)
@@ -177,6 +229,34 @@ public class PropiedadService {
             throw new OperacionInvalidaException("El garante no puede ser el propietario de la propiedad");
         }
         propiedad.reservar(inquilino, garante);
+    }
+
+    /**
+     * RN-03: normaliza la dirección cruda de la propiedad con GeoRef y guarda el resultado en la entidad
+     * (nomenclatura, nombres oficiales de provincia y ciudad, y coordenadas).
+     * Hace una llamada HTTP: llamarlo siempre fuera de una transacción.
+     *
+     * @throws OperacionInvalidaException si GeoRef no encuentra la dirección (400)
+     * @throws com.rovedasa.catalogo.exception.ServicioExternoNoDisponibleException si GeoRef no responde (503)
+     */
+    private void normalizarDireccion(Propiedad propiedad) {
+        DireccionNormalizada direccion = geoRefClient
+                .normalizar(propiedad.getCalle(), propiedad.getNumero(), propiedad.getProvincia(), propiedad.getCiudad())
+                .orElseThrow(() -> new OperacionInvalidaException(String.format(
+                        "No se pudo normalizar la dirección '%s %s' en %s, %s. Verificá la calle, la altura y que "
+                                + "la ciudad sea el nombre oficial de la localidad (por ejemplo 'Córdoba', no 'Córdoba Capital')",
+                        propiedad.getCalle(), propiedad.getNumero(), propiedad.getCiudad(), propiedad.getProvincia())));
+        propiedad.aplicarNormalizacion(direccion.nomenclatura(), direccion.provincia(), direccion.ciudad(),
+                direccion.latitud(), direccion.longitud());
+    }
+
+    // RN-04: tasa con las coordenadas y los nombres oficiales que ya tiene la propiedad (tiene que estar normalizada)
+    private Tasacion tasar(Propiedad propiedad) {
+        Tasacion tasacion = tasacionService.tasar(propiedad.getLatitud(), propiedad.getLongitud(),
+                propiedad.getProvincia(), propiedad.getCiudad(), propiedad.getTipologia(),
+                propiedad.superficieComputableM2());
+        propiedad.aplicarTasacion(tasacion.zona(), tasacion.precioSugeridoM2(), tasacion.canonBaseSugerido());
+        return tasacion;
     }
 
     private Persona buscarPropietarioValidado(Long propietarioId) {

@@ -280,6 +280,132 @@ class PropiedadTest {
         assertNull(propiedad.getCanonBaseSugerido());
     }
 
+    // --- Modificación de datos descriptivos (F-06) ---
+
+    @Test
+    void estaNormalizadaSoloConDireccionYCoordenadas() {
+        assertFalse(propiedad.estaNormalizada());
+
+        normalizarObispoTrejo1200(propiedad);
+
+        assertTrue(propiedad.estaNormalizada());
+    }
+
+    @Test
+    void actualizarDatosDescriptivosSinCambiarLaDireccionConservaLaNormalizacion() {
+        normalizarObispoTrejo1200(propiedad);
+
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.PH, "Obispo Trejo", "1200", "2", "A", "Nueva Córdoba",
+                "5000", "Córdoba", "Córdoba", new BigDecimal("70.00"), new BigDecimal("60.00"));
+
+        assertEquals(TipologiaEnum.PH, propiedad.getTipologia());
+        assertEquals("2", propiedad.getPiso());
+        assertEquals("A", propiedad.getDepartamento());
+        assertEquals("Nueva Córdoba", propiedad.getBarrio());
+        assertEquals("5000", propiedad.getCodigoPostal());
+        assertEquals(new BigDecimal("70.00"), propiedad.getSuperficieTotalM2());
+        assertEquals(new BigDecimal("60.00"), propiedad.getSuperficieCubiertaM2());
+        assertTrue(propiedad.estaNormalizada());
+        assertEquals("OBISPO TREJO 1200, Capital, Córdoba", propiedad.getDireccionNormalizada());
+        assertEquals(-31.4, propiedad.getLatitud());
+    }
+
+    @Test
+    void diferenciasDeMayusculasAcentosYEspaciosNoCuentanComoCambioDeDireccion() {
+        normalizarObispoTrejo1200(propiedad);
+
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.DEPARTAMENTO, " obispo trejo ", "1200", null, null, null,
+                null, "CORDOBA", "cordoba", new BigDecimal("55.00"), null);
+
+        assertTrue(propiedad.estaNormalizada());
+        // Se conservan los valores guardados (los nombres oficiales de GeoRef), no la grafía nueva
+        assertEquals("Obispo Trejo", propiedad.getCalle());
+        assertEquals("Córdoba", propiedad.getCiudad());
+        assertEquals("Córdoba", propiedad.getProvincia());
+    }
+
+    @Test
+    void actualizarDatosDescriptivosConOtraDireccionDescartaLaNormalizacionAnterior() {
+        normalizarObispoTrejo1200(propiedad);
+
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.DEPARTAMENTO, "Independencia", "1200", null, null, null,
+                null, "Córdoba", "Córdoba", new BigDecimal("55.00"), null);
+
+        assertEquals("Independencia", propiedad.getCalle());
+        assertEquals("1200", propiedad.getNumero());
+        assertFalse(propiedad.estaNormalizada());
+        assertNull(propiedad.getDireccionNormalizada());
+        assertNull(propiedad.getLatitud());
+        assertNull(propiedad.getLongitud());
+    }
+
+    @Test
+    void actualizarDatosDescriptivosDetectaCambioDeAltura() {
+        normalizarObispoTrejo1200(propiedad);
+
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.DEPARTAMENTO, "Obispo Trejo", "1300", null, null, null,
+                null, "Córdoba", "Córdoba", new BigDecimal("55.00"), null);
+
+        assertFalse(propiedad.estaNormalizada());
+    }
+
+    @Test
+    void actualizarDatosDescriptivosSePermiteEnUnaPropiedadInactiva() {
+        propiedad.inactivar();
+
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.CASA, "Obispo Trejo", "1200", null, null, null, null,
+                "Córdoba", "Córdoba", new BigDecimal("90.00"), null);
+
+        assertEquals(TipologiaEnum.CASA, propiedad.getTipologia());
+        assertEquals(EstadoPropiedadEnum.INACTIVA, propiedad.getEstado());
+    }
+
+    @Test
+    void noDebeModificarUnaPropiedadReservadaNiTocarSusDatos() {
+        propiedad.reservar(inquilino, garante);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> modificarTipologiaYCalle(propiedad));
+
+        assertTrue(ex.getMessage().contains("PROP-TEST0001"));
+        assertTrue(ex.getMessage().contains("RESERVADA"));
+        assertTrue(ex.getMessage().contains("hay un contrato que la referencia"));
+        assertEquals(TipologiaEnum.DEPARTAMENTO, propiedad.getTipologia());
+        assertEquals("Obispo Trejo", propiedad.getCalle());
+    }
+
+    @Test
+    void noDebeModificarUnaPropiedadAlquilada() {
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> modificarTipologiaYCalle(propiedad));
+
+        assertTrue(ex.getMessage().contains("ALQUILADA"));
+        assertEquals(TipologiaEnum.DEPARTAMENTO, propiedad.getTipologia());
+    }
+
+    @Test
+    void noDebeModificarConCubiertaMayorQueLaTotalNiTocarSusDatos() {
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedad.actualizarDatosDescriptivos(TipologiaEnum.CASA, "Independencia", "900", null, null,
+                        null, null, "Córdoba", "Córdoba", new BigDecimal("50"), new BigDecimal("60")));
+
+        assertTrue(ex.getMessage().contains("superficie cubierta"));
+        assertEquals(TipologiaEnum.DEPARTAMENTO, propiedad.getTipologia());
+        assertEquals("Obispo Trejo", propiedad.getCalle());
+    }
+
+    private static void normalizarObispoTrejo1200(Propiedad propiedad) {
+        propiedad.aplicarNormalizacion("OBISPO TREJO 1200, Capital, Córdoba", "Córdoba", "Córdoba", -31.4, -64.1);
+    }
+
+    private static void modificarTipologiaYCalle(Propiedad propiedad) {
+        propiedad.actualizarDatosDescriptivos(TipologiaEnum.CASA, "Independencia", "900", null, null, null, null,
+                "Córdoba", "Córdoba", new BigDecimal("55.00"), null);
+    }
+
     private Propiedad propiedadConSuperficies(String total, String cubierta) {
         return Propiedad.builder()
                 .tipologia(TipologiaEnum.CASA)

@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -49,6 +50,8 @@ public class CatalogoExceptionHandler {
 
     private static final String MENSAJE_CONFLICTO =
             "La operación entra en conflicto con el estado actual del recurso; reintentá";
+    private static final String MENSAJE_NO_AUTENTICADO =
+            "Se requiere un token de acceso válido para acceder a este recurso";
 
     // 409: el recurso ya existe (mensaje de negocio, se puede mostrar)
     @ExceptionHandler(RecursoDuplicadoException.class)
@@ -85,6 +88,14 @@ public class CatalogoExceptionHandler {
             HttpServletRequest request) {
         log.warn("Autenticación requerida en {}: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
+    }
+
+    // 401: sin token, token inválido o vencido. Llega desde la cadena de filtros (ver SecurityConfig).
+    // El detalle (firma inválida, token vencido, etc.) solo va al log y al header WWW-Authenticate.
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiError> manejarNoAutenticado(AuthenticationException ex, HttpServletRequest request) {
+        log.warn("Petición no autenticada a {}: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.UNAUTHORIZED, MENSAJE_NO_AUTENTICADO, request);
     }
 
     // 400: JSON mal formado. Si es un enum inválido, se indica el campo y los valores permitidos
