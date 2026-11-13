@@ -59,9 +59,8 @@ public class EvaluacionGaranteService {
         // 1. Transacción corta de lectura
         DatosGarante garante = transaccionLectura.execute(estado -> buscarGarante(personaId));
 
-        // 2. BCRA, fuera de toda transacción. canonMensual en null a propósito: así no se aplica la regla de
-        //    ingresos y la evaluación es exactamente la de RN-07 (situación 1 o 2 y 0 cheques rechazados)
-        ValidacionGaranteDTO resultado = solvenciaGaranteService.evaluar(garante.cuitCuil(), garante.ingresos(), null);
+        // 2. BCRA, fuera de toda transacción. La evaluación es la de RN-07 (situación 1 o 2 y 0 cheques rechazados)
+        ValidacionGaranteDTO resultado = solvenciaGaranteService.evaluar(garante.cuitCuil(), garante.ingresos());
 
         // 3. Transacción corta de escritura
         LocalDateTime fechaConsulta = LocalDateTime.now(reloj);

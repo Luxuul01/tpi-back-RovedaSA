@@ -56,7 +56,7 @@ class PersonaControllerTest {
                 .chequesRechazados(0)
                 .ingresosDeclarados(new BigDecimal("2500000"))
                 .esSolvente(true)
-                .motivoEvaluacion("Califica: situación 1, 0 cheques rechazados, ingresos no evaluados (no se informó canon)")
+                .motivoEvaluacion("Califica: situación 1 y 0 cheques rechazados")
                 .build());
 
         mockMvc.perform(evaluarSolvencia(10L).with(conRol("ADMINISTRADOR")))

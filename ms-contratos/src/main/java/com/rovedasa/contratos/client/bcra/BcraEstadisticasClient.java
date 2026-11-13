@@ -75,6 +75,29 @@ public class BcraEstadisticasClient {
                 .retrieve()
                 .body(BcraSerieResponseDTO.class);
 
+        return extraerValores(respuesta, idVariable);
+    }
+
+    /**
+     * Último valor publicado en o antes de 'hasta', sin límite hacia atrás.
+     * Según la documentación de la API v4.0, 'desde' es opcional (por defecto, el inicio de la serie)
+     * y 'limit' indica cuántos registros devolver; la serie viene de la fecha más nueva a la más vieja,
+     * así que con limit=1 el BCRA devuelve el último valor hasta esa fecha.
+     * Devuelve una lista vacía si la serie no tiene valores hasta esa fecha.
+     */
+    public List<BcraValorDTO> obtenerUltimoValor(int idVariable, LocalDate hasta) {
+        log.debug("Consultando BCRA variable {}: último valor hasta {}", idVariable, hasta);
+
+        BcraSerieResponseDTO respuesta = restClient.get()
+                .uri("/estadisticas/v4.0/monetarias/{idVariable}?hasta={hasta}&limit=1",
+                        idVariable, hasta.toString())
+                .retrieve()
+                .body(BcraSerieResponseDTO.class);
+
+        return extraerValores(respuesta, idVariable);
+    }
+
+    private List<BcraValorDTO> extraerValores(BcraSerieResponseDTO respuesta, int idVariable) {
         // Respuesta inesperada: 200 pero sin la estructura documentada
         if (respuesta == null || respuesta.getResults() == null) {
             throw new RestClientException(

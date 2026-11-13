@@ -46,7 +46,7 @@ class IndiceServiceTest {
     void setUp() {
         bcraClient = mock(BcraEstadisticasClient.class);
         cacheService = mock(IndiceCacheService.class);
-        service = new IndiceService(bcraClient, cacheService, new CalculadoraAjuste(), 7, 2);
+        service = new IndiceService(bcraClient, cacheService, new CalculadoraAjuste(), 2);
     }
 
     private static BcraValorDTO v(String fecha, String valor) {
@@ -57,7 +57,7 @@ class IndiceServiceTest {
     @DisplayName("BCRA disponible: usa su valor y lo guarda en el caché")
     void valorDesdeBcra() {
         List<BcraValorDTO> serie = List.of(v("2026-10-26", "37.09"), v("2026-10-25", "37.07"));
-        when(bcraClient.obtenerSerie(eq(40), any(), any())).thenReturn(serie);
+        when(bcraClient.obtenerUltimoValor(eq(40), any())).thenReturn(serie);
 
         ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
 
@@ -70,9 +70,9 @@ class IndiceServiceTest {
     @Test
     @DisplayName("BCRA caído: usa el caché de contingencia")
     void fallbackAlCache() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any()))
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
                 .thenThrow(new ResourceAccessException("Read timed out"));
-        when(cacheService.buscarEntreFechas(eq(TipoIndiceEnum.ICL), any(), any()))
+        when(cacheService.buscarUltimoHasta(eq(TipoIndiceEnum.ICL), any()))
                 .thenReturn(List.of(v("2026-10-24", "37.05")));
 
         ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
@@ -87,9 +87,9 @@ class IndiceServiceTest {
     @Test
     @DisplayName("BCRA caído y caché vacío: 503 (no se ajusta con datos inventados)")
     void sinBcraNiCache() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any()))
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
                 .thenThrow(new ResourceAccessException("Connection refused"));
-        when(cacheService.buscarEntreFechas(any(), any(), any())).thenReturn(List.of());
+        when(cacheService.buscarUltimoHasta(any(), any())).thenReturn(List.of());
 
         assertThrows(IndiceNoDisponibleException.class,
                 () -> service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26)));
@@ -98,9 +98,9 @@ class IndiceServiceTest {
     @Test
     @DisplayName("Ajuste por ICL: canon x ICL_hasta / ICL_desde")
     void ajustePorIcl() {
-        when(bcraClient.obtenerSerie(eq(40), any(), eq(LocalDate.of(2026, 7, 1))))
+        when(bcraClient.obtenerUltimoValor(eq(40), eq(LocalDate.of(2026, 7, 1))))
                 .thenReturn(List.of(v("2026-07-01", "30.00")));
-        when(bcraClient.obtenerSerie(eq(40), any(), eq(LocalDate.of(2026, 10, 1))))
+        when(bcraClient.obtenerUltimoValor(eq(40), eq(LocalDate.of(2026, 10, 1))))
                 .thenReturn(List.of(v("2026-10-01", "33.00")));
 
         ResultadoAjusteDTO r = service.calcularAjuste(TipoIndiceEnum.ICL, new BigDecimal("400000"),
@@ -154,26 +154,26 @@ class IndiceServiceTest {
     void fechaFutura() {
         assertThrows(OperacionInvalidaException.class,
                 () -> service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.now().plusDays(1)));
-        verify(bcraClient, never()).obtenerSerie(anyInt(), any(), any());
+        verify(bcraClient, never()).obtenerUltimoValor(anyInt(), any());
     }
 
     @Test
     @DisplayName("El BCRA rechaza el pedido (400) -> 400, no se usa el caché")
     void bcraRechazaPedido() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any()))
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
                 .thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST));
 
         assertThrows(OperacionInvalidaException.class,
                 () -> service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26)));
-        verify(cacheService, never()).buscarEntreFechas(any(), any(), any());
+        verify(cacheService, never()).buscarUltimoHasta(any(), any());
     }
 
     @Test
     @DisplayName("El BCRA responde 429 (cuota agotada) -> usa el caché")
     void cuotaAgotadaUsaCache() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any()))
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
                 .thenThrow(new HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS));
-        when(cacheService.buscarEntreFechas(eq(TipoIndiceEnum.ICL), any(), any()))
+        when(cacheService.buscarUltimoHasta(eq(TipoIndiceEnum.ICL), any()))
                 .thenReturn(List.of(v("2026-10-25", "37.07")));
 
         ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
@@ -184,9 +184,9 @@ class IndiceServiceTest {
     @Test
     @DisplayName("El BCRA responde 403 (bloqueo de su lado) -> usa el caché, no es culpa del pedido")
     void bcraBloqueaUsaCache() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any()))
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
                 .thenThrow(new HttpClientErrorException(HttpStatus.FORBIDDEN));
-        when(cacheService.buscarEntreFechas(eq(TipoIndiceEnum.ICL), any(), any()))
+        when(cacheService.buscarUltimoHasta(eq(TipoIndiceEnum.ICL), any()))
                 .thenReturn(List.of(v("2026-10-25", "37.07")));
 
         ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
@@ -198,7 +198,7 @@ class IndiceServiceTest {
     @DisplayName("Si falla guardar en el caché, igual responde con el dato del BCRA")
     void fallaGuardarCache() {
         List<BcraValorDTO> serie = List.of(v("2026-10-26", "37.09"));
-        when(bcraClient.obtenerSerie(eq(40), any(), any())).thenReturn(serie);
+        when(bcraClient.obtenerUltimoValor(eq(40), any())).thenReturn(serie);
         doThrow(new DataIntegrityViolationException("duplicada")).when(cacheService).guardar(any(), any());
 
         ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
@@ -207,9 +207,9 @@ class IndiceServiceTest {
     }
 
     @Test
-    @DisplayName("El BCRA responde sin valores para el rango -> 400")
+    @DisplayName("El BCRA responde pero no tiene valores hasta esa fecha -> 400")
     void bcraSinValores() {
-        when(bcraClient.obtenerSerie(anyInt(), any(), any())).thenReturn(List.of());
+        when(bcraClient.obtenerUltimoValor(anyInt(), any())).thenReturn(List.of());
         assertThrows(OperacionInvalidaException.class,
                 () -> service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2015, 1, 10)));
     }
@@ -219,5 +219,59 @@ class IndiceServiceTest {
     void fechasInvertidas() {
         assertThrows(OperacionInvalidaException.class, () -> service.calcularCoeficiente(
                 TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 7, 1)));
+    }
+
+    @Test
+    @DisplayName("Al BCRA se le pide el último valor hasta la fecha, sin ventana hacia atrás")
+    void pideUltimoValorHastaLaFecha() {
+        when(bcraClient.obtenerUltimoValor(eq(40), eq(LocalDate.of(2026, 10, 26))))
+                .thenReturn(List.of(v("2026-10-26", "37.09")));
+
+        service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
+
+        verify(bcraClient).obtenerUltimoValor(40, LocalDate.of(2026, 10, 26));
+        verify(bcraClient, never()).obtenerSerie(anyInt(), any(), any());
+    }
+
+    @Test
+    @DisplayName("BCRA caído: usa el último valor del caché anterior a la fecha, aunque sea viejo (sección 14)")
+    void cacheUsaUltimoAnteriorSinLimite() {
+        when(bcraClient.obtenerUltimoValor(anyInt(), any()))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+        // 40 días antes de la fecha pedida: con la tolerancia vieja de 7 días daba 503
+        when(cacheService.buscarUltimoHasta(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26)))
+                .thenReturn(List.of(v("2026-09-16", "36.27")));
+
+        ValorIndiceDTO valor = service.obtenerValor(TipoIndiceEnum.ICL, LocalDate.of(2026, 10, 26));
+
+        assertAll(
+                () -> assertEquals(OrigenDatoEnum.CACHE_CONTINGENCIA, valor.getOrigen()),
+                () -> assertEquals(LocalDate.of(2026, 10, 26), valor.getFechaSolicitada()),
+                () -> assertEquals(LocalDate.of(2026, 9, 16), valor.getFechaIndice()),
+                () -> assertEquals(new BigDecimal("36.27"), valor.getValor()));
+    }
+
+    @Test
+    @DisplayName("C-05: ICL 10,00 -> 12,50 da +25 % y canon 625.000, también con el BCRA caído y el caché")
+    void casoC05ConBcraYConCache() {
+        LocalDate desde = LocalDate.of(2026, 7, 1);
+        LocalDate hasta = LocalDate.of(2026, 10, 1);
+        when(bcraClient.obtenerUltimoValor(40, desde)).thenReturn(List.of(v("2026-07-01", "10.00")));
+        when(bcraClient.obtenerUltimoValor(40, hasta)).thenReturn(List.of(v("2026-10-01", "12.50")));
+
+        ResultadoAjusteDTO conBcra = service.calcularAjuste(TipoIndiceEnum.ICL, new BigDecimal("500000"), desde, hasta);
+
+        when(bcraClient.obtenerUltimoValor(anyInt(), any())).thenThrow(new ResourceAccessException("caído"));
+        when(cacheService.buscarUltimoHasta(TipoIndiceEnum.ICL, desde)).thenReturn(List.of(v("2026-07-01", "10.00")));
+        when(cacheService.buscarUltimoHasta(TipoIndiceEnum.ICL, hasta)).thenReturn(List.of(v("2026-10-01", "12.50")));
+
+        ResultadoAjusteDTO conCache = service.calcularAjuste(TipoIndiceEnum.ICL, new BigDecimal("500000"), desde, hasta);
+
+        assertAll(
+                () -> assertEquals(new BigDecimal("625000.00"), conBcra.getMontoNuevo()),
+                () -> assertEquals(new BigDecimal("25.00"), conBcra.getPorcentajeVariacion()),
+                () -> assertEquals(OrigenDatoEnum.BCRA, conBcra.getOrigen()),
+                () -> assertEquals(new BigDecimal("625000.00"), conCache.getMontoNuevo()),
+                () -> assertEquals(OrigenDatoEnum.CACHE_CONTINGENCIA, conCache.getOrigen()));
     }
 }
