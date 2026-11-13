@@ -21,7 +21,6 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -60,16 +59,13 @@ public class Propiedad {
     @Column(nullable = false, length = 20)
     private String numero;
 
-    @Setter
     @Column(length = 10)
     private String piso;
 
-    @Setter
     @Column(length = 10)
     private String departamento;
 
     // Informativo, cargado a mano (GeoRef no lo devuelve)
-    @Setter
     private String barrio;
 
     @Column(nullable = false, length = 100)
@@ -78,7 +74,6 @@ public class Propiedad {
     @Column(nullable = false, length = 100)
     private String provincia;
 
-    @Setter
     @Column(length = 10)
     private String codigoPostal;
 
