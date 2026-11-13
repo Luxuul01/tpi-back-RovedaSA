@@ -1,5 +1,7 @@
 server:
   port: 8082
+  # Respeta X-Forwarded-* del API Gateway para que Swagger UI apunte a :8080 al probar endpoints
+  forward-headers-strategy: framework
 
 spring:
   application:

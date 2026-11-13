@@ -16,6 +16,15 @@ rovedasa-gw:
   url-microservicio-catalogo: http://localhost:8081
   url-microservicio-contratos: http://localhost:8082
 
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: ms-catalogo-inmobiliario
+        url: /v3/api-docs/catalogo
+      - name: ms-contratos
+        url: /v3/api-docs/contratos
+
 logging:
   level:
     org.springframework.cloud.gateway: INFO
