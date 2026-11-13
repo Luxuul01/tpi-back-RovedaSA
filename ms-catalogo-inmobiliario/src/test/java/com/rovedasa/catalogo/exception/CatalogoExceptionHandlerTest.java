@@ -81,6 +81,15 @@ class CatalogoExceptionHandlerTest {
     }
 
     @Test
+    void bcraCaidoDevuelve503ConElMismoFormatoQueGeoRef() {
+        ResponseEntity<ApiError> respuesta = handler.manejarServicioExterno(
+                new BcraNoDisponibleException("La Central de Deudores del BCRA no está disponible", null), request);
+
+        verificar(respuesta, HttpStatus.SERVICE_UNAVAILABLE);
+        assertEquals("La Central de Deudores del BCRA no está disponible", respuesta.getBody().getMessage());
+    }
+
+    @Test
     void accesoDenegadoDevuelve403() {
         ResponseEntity<ApiError> respuesta = handler.manejarAccesoDenegado(
                 new AccessDeniedException("Access Denied"), request);
