@@ -32,7 +32,6 @@ class SolvenciaGaranteServiceTest {
 
     private static final String CUIT = "20123456789";
     private static final BigDecimal INGRESOS = new BigDecimal("1500000");
-    private static final BigDecimal CANON = new BigDecimal("400000");
 
     private BcraCentralDeudoresClient bcraClient;
     private SolvenciaGaranteService service;
@@ -40,7 +39,7 @@ class SolvenciaGaranteServiceTest {
     @BeforeEach
     void setUp() {
         bcraClient = mock(BcraCentralDeudoresClient.class);
-        service = new SolvenciaGaranteService(bcraClient, new EvaluadorSolvencia(2, 0, new BigDecimal("3")));
+        service = new SolvenciaGaranteService(bcraClient, new EvaluadorSolvencia(2, 0));
     }
 
     private static BcraDeudorDTO deudor(String periodo, int... situaciones) {
@@ -58,7 +57,7 @@ class SolvenciaGaranteServiceTest {
         when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.empty());
         when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.empty());
 
-        ValidacionGaranteDTO r = service.evaluar(CUIT, INGRESOS, CANON);
+        ValidacionGaranteDTO r = service.evaluar(CUIT, INGRESOS);
 
         assertAll(
                 () -> assertTrue(r.getEsSolvente()),
@@ -72,7 +71,7 @@ class SolvenciaGaranteServiceTest {
         when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.of(deudor("202608", 1, 3, 2)));
         when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.empty());
 
-        ValidacionGaranteDTO r = service.evaluar("20-12345678-9", INGRESOS, CANON);
+        ValidacionGaranteDTO r = service.evaluar("20-12345678-9", INGRESOS);
 
         assertAll(
                 () -> assertEquals(3, r.getSituacionCrediticiaBcra()),
@@ -92,7 +91,7 @@ class SolvenciaGaranteServiceTest {
         when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.empty());
         when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.of(cheques));
 
-        ValidacionGaranteDTO r = service.evaluar(CUIT, INGRESOS, CANON);
+        ValidacionGaranteDTO r = service.evaluar(CUIT, INGRESOS);
 
         assertAll(
                 () -> assertEquals(2, r.getChequesRechazados()),
@@ -103,12 +102,12 @@ class SolvenciaGaranteServiceTest {
     @DisplayName("BCRA caído: BcraNoDisponibleException (503)")
     void bcraCaido() {
         when(bcraClient.obtenerDeudas(CUIT)).thenThrow(new ResourceAccessException("Read timed out"));
-        assertThrows(BcraNoDisponibleException.class, () -> service.evaluar(CUIT, INGRESOS, CANON));
+        assertThrows(BcraNoDisponibleException.class, () -> service.evaluar(CUIT, INGRESOS));
     }
 
     @Test
     @DisplayName("CUIT con formato inválido: 400")
     void cuitInvalido() {
-        assertThrows(OperacionInvalidaException.class, () -> service.evaluar("123", INGRESOS, CANON));
+        assertThrows(OperacionInvalidaException.class, () -> service.evaluar("123", INGRESOS));
     }
 }
