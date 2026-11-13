@@ -28,6 +28,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -213,30 +214,55 @@ class PropiedadServiceTest {
     }
 
     @Test
-    void actualizarADisponibleDesdeInactivaReactiva() {
+    void actualizarADisponibleDesdeReservadaCaeLaReserva() {
         Propiedad propiedad = propiedadDisponible();
-        propiedad.inactivar();
+        propiedad.reservar(inquilino, garante);
 
         PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, null, null));
 
         assertEquals(EstadoPropiedadEnum.DISPONIBLE, dto.getEstado());
+        assertNull(dto.getInquilinoId());
     }
 
     @Test
-    void actualizarAInactiva() {
+    void transicionInvalidaDisponibleAAlquiladaLanzaOperacionInvalidaConMensajeClaro() {
+        Propiedad propiedad = propiedadDisponible();
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.ALQUILADA, null, null)));
+
+        assertEquals("No se puede pasar de DISPONIBLE a ALQUILADA", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+    }
+
+    @Test
+    void transicionAlMismoEstadoLanzaOperacionInvalida() {
         propiedadDisponible();
 
-        PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null));
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, null, null)));
 
-        assertEquals(EstadoPropiedadEnum.INACTIVA, dto.getEstado());
+        assertEquals("No se puede pasar de DISPONIBLE a DISPONIBLE", ex.getMessage());
     }
 
     @Test
-    void transicionInvalidaDisponibleAAlquiladaSePropagaDesdeLaEntidad() {
+    void inactivarPorPatchNoEstaPermitido() {
         propiedadDisponible();
 
         assertThrows(OperacionInvalidaException.class,
-                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.ALQUILADA, null, null)));
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
+    }
+
+    @Test
+    void transicionInvalidaSeRechazaAntesDeBuscarPersonas() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.RESERVADA, 2L, 3L)));
+
+        verifyNoInteractions(personaRepository);
     }
 
     @Test
@@ -291,6 +317,37 @@ class PropiedadServiceTest {
 
         assertThrows(RecursoNoEncontradoException.class,
                 () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
+    }
+
+    // --- listarPropias ---
+
+    @Test
+    void listarPropiasFiltraPorElKeycloakUserIdDelToken() {
+        Propiedad propiedad = Propiedad.builder()
+                .codigo("PROP-TEST0001")
+                .tipologia(TipologiaEnum.DEPARTAMENTO)
+                .calle("Independencia")
+                .numero("900")
+                .ciudad("Córdoba")
+                .provincia("Córdoba")
+                .superficieTotalM2(new BigDecimal("55"))
+                .propietario(propietario)
+                .build();
+        when(propiedadRepository.findByPropietario_KeycloakUserId("kc-propietario-1"))
+                .thenReturn(List.of(propiedad));
+
+        List<PropiedadResponse> propias = propiedadService.listarPropias("kc-propietario-1");
+
+        assertEquals(1, propias.size());
+        assertEquals("PROP-TEST0001", propias.get(0).codigo());
+        assertEquals(1L, propias.get(0).propietarioId());
+    }
+
+    @Test
+    void listarPropiasSinPropiedadesDevuelveListaVacia() {
+        when(propiedadRepository.findByPropietario_KeycloakUserId("kc-sin-propiedades")).thenReturn(List.of());
+
+        assertTrue(propiedadService.listarPropias("kc-sin-propiedades").isEmpty());
     }
 
     // --- Datos de prueba ---

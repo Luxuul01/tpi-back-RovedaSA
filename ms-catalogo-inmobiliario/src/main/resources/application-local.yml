@@ -1,4 +1,5 @@
-# Perfil local: la seguridad queda desactivada (ver SecurityConfig) para probar sin token de Keycloak
+# Perfil local: solo baja el nivel de log de seguridad. La seguridad es la misma que en los demás perfiles
+# (todos los endpoints salvo /actuator/** exigen un JWT de Keycloak, ver SecurityConfig)
 logging:
   level:
     org.springframework.security: INFO
