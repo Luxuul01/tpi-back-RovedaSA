@@ -1,6 +1,7 @@
 package com.rovedasa.catalogo.model;
 
 import com.rovedasa.catalogo.model.enums.TipologiaEnum;
+import com.rovedasa.catalogo.util.NormalizadorTexto;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import jakarta.persistence.Column;
@@ -28,6 +29,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -137,12 +139,7 @@ public class Propiedad {
     private Propiedad(String codigo, TipologiaEnum tipologia, String calle, String numero, String piso,
             String departamento, String barrio, String ciudad, String provincia, String codigoPostal,
             BigDecimal superficieTotalM2, BigDecimal superficieCubiertaM2, Persona propietario) {
-        if (superficieTotalM2 != null && superficieCubiertaM2 != null
-                && superficieCubiertaM2.compareTo(superficieTotalM2) > 0) {
-            throw new OperacionInvalidaException(String.format(
-                    "La superficie cubierta (%s m²) no puede ser mayor que la superficie total (%s m²)",
-                    superficieCubiertaM2, superficieTotalM2));
-        }
+        validarSuperficies(superficieTotalM2, superficieCubiertaM2);
         this.codigo = codigo;
         this.tipologia = tipologia;
         this.calle = calle;
@@ -180,6 +177,61 @@ public class Propiedad {
         this.ciudad = ciudadOficial;
         this.latitud = latitud;
         this.longitud = longitud;
+    }
+
+    // Tiene la dirección normalizada por GeoRef y sus coordenadas: se puede tasar sin volver a consultar GeoRef
+    public boolean estaNormalizada() {
+        return direccionNormalizada != null && latitud != null && longitud != null;
+    }
+
+    /**
+     * Reemplaza los datos descriptivos de la propiedad (F-06). El propietario no se cambia por acá.
+     *
+     * Solo se permite en DISPONIBLE o INACTIVA: en RESERVADA o ALQUILADA hay un contrato que referencia
+     * la propiedad tal como está. La guarda va primero, así un rechazo no deja la entidad a medio modificar.
+     *
+     * La dirección (calle, número, ciudad y provincia) se compara sin acentos, mayúsculas ni espacios en
+     * los extremos. Si no cambió, se conservan los valores guardados (en particular los nombres oficiales
+     * de GeoRef) y la normalización. Si cambió, se guarda la dirección cruda nueva y se descarta la
+     * normalización anterior: la propiedad deja de estar normalizada (ver estaNormalizada) hasta que
+     * quien llama aplique el resultado de GeoRef con aplicarNormalizacion.
+     */
+    public void actualizarDatosDescriptivos(TipologiaEnum tipologia, String calle, String numero, String piso,
+            String departamento, String barrio, String codigoPostal, String ciudad, String provincia,
+            BigDecimal superficieTotalM2, BigDecimal superficieCubiertaM2) {
+        if (estado != EstadoPropiedadEnum.DISPONIBLE && estado != EstadoPropiedadEnum.INACTIVA) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede modificar la propiedad %s: está %s y hay un contrato que la referencia. "
+                            + "Solo se pueden modificar propiedades DISPONIBLE o INACTIVA",
+                    codigo, estado));
+        }
+        validarSuperficies(superficieTotalM2, superficieCubiertaM2);
+
+        if (cambiaLaDireccion(calle, numero, ciudad, provincia)) {
+            this.calle = calle;
+            this.numero = numero;
+            this.ciudad = ciudad;
+            this.provincia = provincia;
+            this.direccionNormalizada = null;
+            this.latitud = null;
+            this.longitud = null;
+        }
+        this.tipologia = tipologia;
+        this.piso = piso;
+        this.departamento = departamento;
+        this.barrio = barrio;
+        this.codigoPostal = codigoPostal;
+        this.superficieTotalM2 = superficieTotalM2;
+        this.superficieCubiertaM2 = superficieCubiertaM2;
+    }
+
+    private boolean cambiaLaDireccion(String calle, String numero, String ciudad, String provincia) {
+        return difiere(this.calle, calle) || difiere(this.numero, numero)
+                || difiere(this.ciudad, ciudad) || difiere(this.provincia, provincia);
+    }
+
+    private static boolean difiere(String actual, String nuevo) {
+        return !Objects.equals(NormalizadorTexto.normalizar(actual), NormalizadorTexto.normalizar(nuevo));
     }
 
     // Los tres valores pueden ser nulos cuando la ciudad no tiene cobertura de precios de referencia
@@ -255,6 +307,15 @@ public class Propiedad {
         throw new OperacionInvalidaException(String.format(
                 "No se puede %s la propiedad %s: su estado actual es %s y la operación requiere %s",
                 operacion, codigo, estado, permitidos));
+    }
+
+    private static void validarSuperficies(BigDecimal superficieTotalM2, BigDecimal superficieCubiertaM2) {
+        if (superficieTotalM2 != null && superficieCubiertaM2 != null
+                && superficieCubiertaM2.compareTo(superficieTotalM2) > 0) {
+            throw new OperacionInvalidaException(String.format(
+                    "La superficie cubierta (%s m²) no puede ser mayor que la superficie total (%s m²)",
+                    superficieCubiertaM2, superficieTotalM2));
+        }
     }
 
     // Error de programación (no de negocio): quien llama tiene que pasar los datos de GeoRef completos
