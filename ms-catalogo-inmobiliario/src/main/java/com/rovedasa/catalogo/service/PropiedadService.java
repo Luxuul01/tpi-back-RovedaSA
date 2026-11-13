@@ -92,19 +92,10 @@ public class PropiedadService {
                 .build();
 
         // 3. GeoRef, fuera de toda transacción
-        DireccionNormalizada direccion = geoRefClient
-                .normalizar(propiedad.getCalle(), propiedad.getNumero(), propiedad.getProvincia(), propiedad.getCiudad())
-                .orElseThrow(() -> new OperacionInvalidaException(String.format(
-                        "No se pudo normalizar la dirección '%s %s' en %s, %s. Verificá la calle, la altura y que "
-                                + "la ciudad sea el nombre oficial de la localidad (por ejemplo 'Córdoba', no 'Córdoba Capital')",
-                        propiedad.getCalle(), propiedad.getNumero(), propiedad.getCiudad(), propiedad.getProvincia())));
+        normalizarDireccion(propiedad);
 
-        // 4. Normalización y tasación
-        propiedad.aplicarNormalizacion(direccion.nomenclatura(), direccion.provincia(), direccion.ciudad(),
-                direccion.latitud(), direccion.longitud());
-        Tasacion tasacion = tasacionService.tasar(direccion.latitud(), direccion.longitud(),
-                direccion.provincia(), direccion.ciudad(), propiedad.getTipologia(), propiedad.superficieComputableM2());
-        propiedad.aplicarTasacion(tasacion.zona(), tasacion.precioSugeridoM2(), tasacion.canonBaseSugerido());
+        // 4. Tasación con las coordenadas y los nombres oficiales que devolvió GeoRef
+        Tasacion tasacion = tasar(propiedad);
 
         // 5. Transacción corta de escritura
         Propiedad guardada = transaccionEscritura.execute(estado -> propiedadRepository.save(propiedad));
@@ -177,6 +168,34 @@ public class PropiedadService {
             throw new OperacionInvalidaException("El garante no puede ser el propietario de la propiedad");
         }
         propiedad.reservar(inquilino, garante);
+    }
+
+    /**
+     * RN-03: normaliza la dirección cruda de la propiedad con GeoRef y guarda el resultado en la entidad
+     * (nomenclatura, nombres oficiales de provincia y ciudad, y coordenadas).
+     * Hace una llamada HTTP: llamarlo siempre fuera de una transacción.
+     *
+     * @throws OperacionInvalidaException si GeoRef no encuentra la dirección (400)
+     * @throws com.rovedasa.catalogo.exception.ServicioExternoNoDisponibleException si GeoRef no responde (503)
+     */
+    private void normalizarDireccion(Propiedad propiedad) {
+        DireccionNormalizada direccion = geoRefClient
+                .normalizar(propiedad.getCalle(), propiedad.getNumero(), propiedad.getProvincia(), propiedad.getCiudad())
+                .orElseThrow(() -> new OperacionInvalidaException(String.format(
+                        "No se pudo normalizar la dirección '%s %s' en %s, %s. Verificá la calle, la altura y que "
+                                + "la ciudad sea el nombre oficial de la localidad (por ejemplo 'Córdoba', no 'Córdoba Capital')",
+                        propiedad.getCalle(), propiedad.getNumero(), propiedad.getCiudad(), propiedad.getProvincia())));
+        propiedad.aplicarNormalizacion(direccion.nomenclatura(), direccion.provincia(), direccion.ciudad(),
+                direccion.latitud(), direccion.longitud());
+    }
+
+    // RN-04: tasa con las coordenadas y los nombres oficiales que ya tiene la propiedad (tiene que estar normalizada)
+    private Tasacion tasar(Propiedad propiedad) {
+        Tasacion tasacion = tasacionService.tasar(propiedad.getLatitud(), propiedad.getLongitud(),
+                propiedad.getProvincia(), propiedad.getCiudad(), propiedad.getTipologia(),
+                propiedad.superficieComputableM2());
+        propiedad.aplicarTasacion(tasacion.zona(), tasacion.precioSugeridoM2(), tasacion.canonBaseSugerido());
+        return tasacion;
     }
 
     private Persona buscarPropietarioValidado(Long propietarioId) {
