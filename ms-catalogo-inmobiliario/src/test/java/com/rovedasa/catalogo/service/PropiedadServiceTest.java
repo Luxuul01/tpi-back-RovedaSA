@@ -3,6 +3,7 @@ package com.rovedasa.catalogo.service;
 import com.rovedasa.catalogo.client.georef.DireccionNormalizada;
 import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
+import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.exception.ServicioExternoNoDisponibleException;
 import com.rovedasa.catalogo.model.Persona;
@@ -20,6 +21,8 @@ import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -50,6 +53,8 @@ class PropiedadServiceTest {
 
     private static final double LATITUD = -31.4266835418118;
     private static final double LONGITUD = -64.1885105207543;
+    private static final double LATITUD_1200 = -31.4297781602675;
+    private static final double LONGITUD_1200 = -64.1898168807412;
 
     @Mock
     private PropiedadRepository propiedadRepository;
@@ -319,6 +324,178 @@ class PropiedadServiceTest {
                 () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
     }
 
+    // --- modificar (F-06) ---
+
+    @Test
+    void modificarSinCambioDeDireccionRetasaConLasCoordenadasActualesSinLlamarAGeoRef() {
+        propiedadNormalizada();
+        // CASA, 80 m² totales y 60 cubiertos -> 60 + 20 × 0,5 = 70,00 m² computables
+        when(tasacionService.tasar(LATITUD, LONGITUD, "Córdoba", "Córdoba", TipologiaEnum.CASA,
+                new BigDecimal("70.00")))
+                .thenReturn(new Tasacion(zona(), new BigDecimal("15400.00"), new BigDecimal("1078000.00")));
+        when(propiedadRepository.save(any(Propiedad.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        PropiedadResponse respuesta = propiedadService.modificar(10L,
+                modificacion("Independencia", "900", TipologiaEnum.CASA, "80", "60"));
+
+        verifyNoInteractions(geoRefClient);
+        assertEquals(TipologiaEnum.CASA, respuesta.tipologia());
+        assertEquals(new BigDecimal("70.00"), respuesta.superficieComputableM2());
+        assertEquals(new BigDecimal("15400.00"), respuesta.precioSugeridoM2());
+        assertEquals(new BigDecimal("1078000.00"), respuesta.canonBaseSugerido());
+        assertEquals("Nueva Córdoba", respuesta.zonaNombre());
+        // Conserva la normalización y el propietario
+        assertEquals("INDEPENDENCIA 900, Capital, Córdoba", respuesta.direccionNormalizada());
+        assertEquals(LATITUD, respuesta.latitud());
+        assertEquals(1L, respuesta.propietarioId());
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, respuesta.estado());
+        // Dos transacciones cortas (lectura y escritura), igual que el alta
+        verify(transactionManager, times(2)).getTransaction(any());
+        verify(transactionManager, times(2)).commit(any());
+    }
+
+    @Test
+    void modificarConCambioDeDireccionNormalizaConGeoRefYRetasaConLasCoordenadasNuevas() {
+        propiedadNormalizada();
+        when(geoRefClient.normalizar("Independencia", "1200", "Córdoba", "cordoba"))
+                .thenReturn(Optional.of(direccionIndependencia1200()));
+        when(tasacionService.tasar(LATITUD_1200, LONGITUD_1200, "Córdoba", "Córdoba", TipologiaEnum.DEPARTAMENTO,
+                new BigDecimal("55.00")))
+                .thenReturn(new Tasacion(zona(), new BigDecimal("14000.00"), new BigDecimal("770000.00")));
+        when(propiedadRepository.save(any(Propiedad.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        // Ciudad en minúsculas: se guarda el nombre oficial que devuelve GeoRef
+        PropiedadResponse respuesta = propiedadService.modificar(10L,
+                new ModificarPropiedadRequest(TipologiaEnum.DEPARTAMENTO, " Independencia ", "1200", " ", null,
+                        null, null, "cordoba", "Córdoba", new BigDecimal("55"), null));
+
+        ArgumentCaptor<Propiedad> guardada = ArgumentCaptor.forClass(Propiedad.class);
+        verify(propiedadRepository).save(guardada.capture());
+        Propiedad propiedad = guardada.getValue();
+        assertEquals("Independencia", propiedad.getCalle());
+        assertEquals("1200", propiedad.getNumero());
+        assertNull(propiedad.getPiso());
+        assertEquals("Córdoba", propiedad.getCiudad());
+        assertEquals("INDEPENDENCIA 1200, Capital, Córdoba", propiedad.getDireccionNormalizada());
+        assertEquals(LATITUD_1200, propiedad.getLatitud());
+        assertEquals(LONGITUD_1200, propiedad.getLongitud());
+        assertEquals(new BigDecimal("770000.00"), respuesta.canonBaseSugerido());
+    }
+
+    @Test
+    void modificarPropiedadInactivaEstaPermitido() {
+        propiedadEn(EstadoPropiedadEnum.INACTIVA);
+        when(tasacionService.tasar(anyDouble(), anyDouble(), any(), any(), any(), any()))
+                .thenReturn(Tasacion.sinCobertura());
+        when(propiedadRepository.save(any(Propiedad.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        PropiedadResponse respuesta = propiedadService.modificar(10L,
+                modificacion("Independencia", "900", TipologiaEnum.PH, "55", null));
+
+        assertEquals(TipologiaEnum.PH, respuesta.tipologia());
+        assertEquals(EstadoPropiedadEnum.INACTIVA, respuesta.estado());
+        assertNull(respuesta.canonBaseSugerido());
+    }
+
+    @Test
+    void modificarPropiedadReservadaLanzaOperacionInvalidaSinLlamarAGeoRefNiGuardar() {
+        Propiedad propiedad = propiedadEn(EstadoPropiedadEnum.RESERVADA);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.modificar(10L,
+                        modificacion("Independencia", "1200", TipologiaEnum.CASA, "55", null)));
+
+        assertTrue(ex.getMessage().contains("está RESERVADA y hay un contrato que la referencia"));
+        assertEquals(TipologiaEnum.DEPARTAMENTO, propiedad.getTipologia());
+        verifyNoInteractions(geoRefClient, tasacionService);
+        verify(propiedadRepository, never()).save(any());
+    }
+
+    @Test
+    void modificarPropiedadAlquiladaLanzaOperacionInvalidaSinLlamarAGeoRefNiGuardar() {
+        propiedadEn(EstadoPropiedadEnum.ALQUILADA);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.modificar(10L,
+                        modificacion("Independencia", "900", TipologiaEnum.CASA, "55", null)));
+
+        assertTrue(ex.getMessage().contains("está ALQUILADA y hay un contrato que la referencia"));
+        verifyNoInteractions(geoRefClient, tasacionService);
+        verify(propiedadRepository, never()).save(any());
+    }
+
+    @Test
+    void modificarConDireccionQueGeoRefNoEncuentraLanzaOperacionInvalidaYNoGuarda() {
+        propiedadNormalizada();
+        when(geoRefClient.normalizar("Obispo Trejo", "1200", "Córdoba", "Córdoba")).thenReturn(Optional.empty());
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.modificar(10L,
+                        modificacion("Obispo Trejo", "1200", TipologiaEnum.DEPARTAMENTO, "55", null)));
+
+        assertTrue(ex.getMessage().contains("No se pudo normalizar la dirección 'Obispo Trejo 1200'"));
+        verifyNoInteractions(tasacionService);
+        verify(propiedadRepository, never()).save(any());
+    }
+
+    @Test
+    void modificarConGeoRefCaidoPropagaLaExcepcionYNoGuardaNada() {
+        propiedadNormalizada();
+        when(geoRefClient.normalizar("Independencia", "1200", "Córdoba", "Córdoba"))
+                .thenThrow(new ServicioExternoNoDisponibleException("GeoRef no disponible", null));
+
+        assertThrows(ServicioExternoNoDisponibleException.class,
+                () -> propiedadService.modificar(10L,
+                        modificacion("Independencia", "1200", TipologiaEnum.DEPARTAMENTO, "55", null)));
+
+        verifyNoInteractions(tasacionService);
+        verify(propiedadRepository, never()).save(any());
+        // Solo se abrió la transacción de lectura: la de escritura nunca empezó
+        verify(transactionManager, times(1)).getTransaction(any());
+    }
+
+    @Test
+    void modificarPropiedadInexistenteLanzaRecursoNoEncontrado() {
+        when(propiedadRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(RecursoNoEncontradoException.class,
+                () -> propiedadService.modificar(99L,
+                        modificacion("Independencia", "900", TipologiaEnum.CASA, "55", null)));
+        verifyNoInteractions(geoRefClient, tasacionService);
+    }
+
+    // --- darDeBaja (F-06) ---
+
+    @Test
+    void darDeBajaDesdeDisponibleLaDejaInactiva() {
+        Propiedad propiedad = propiedadNormalizada();
+
+        PropiedadResponse respuesta = propiedadService.darDeBaja(10L);
+
+        assertEquals(EstadoPropiedadEnum.INACTIVA, respuesta.estado());
+        assertEquals(EstadoPropiedadEnum.INACTIVA, propiedad.getEstado());
+        assertEquals(10L, respuesta.id());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = EstadoPropiedadEnum.class, names = {"RESERVADA", "ALQUILADA", "INACTIVA"})
+    void darDeBajaFueraDeDisponibleLanzaOperacionInvalidaYNoCambiaElEstado(EstadoPropiedadEnum estado) {
+        Propiedad propiedad = propiedadEn(estado);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.darDeBaja(10L));
+
+        assertTrue(ex.getMessage().contains("su estado actual es " + estado));
+        assertEquals(estado, propiedad.getEstado());
+    }
+
+    @Test
+    void darDeBajaPropiedadInexistenteLanzaRecursoNoEncontrado() {
+        when(propiedadRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(RecursoNoEncontradoException.class, () -> propiedadService.darDeBaja(99L));
+    }
+
     // --- listarPropias ---
 
     @Test
@@ -366,6 +543,40 @@ class PropiedadServiceTest {
         ReflectionTestUtils.setField(propiedad, "id", 10L);
         when(propiedadRepository.findById(10L)).thenReturn(Optional.of(propiedad));
         return propiedad;
+    }
+
+    // Disponible y ya normalizada en Independencia 900, como queda después del alta
+    private Propiedad propiedadNormalizada() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.aplicarNormalizacion("INDEPENDENCIA 900, Capital, Córdoba", "Córdoba", "Córdoba", LATITUD, LONGITUD);
+        return propiedad;
+    }
+
+    private Propiedad propiedadEn(EstadoPropiedadEnum estado) {
+        Propiedad propiedad = propiedadNormalizada();
+        switch (estado) {
+            case RESERVADA -> propiedad.reservar(inquilino, garante);
+            case ALQUILADA -> {
+                propiedad.reservar(inquilino, garante);
+                propiedad.alquilar();
+            }
+            case INACTIVA -> propiedad.inactivar();
+            case DISPONIBLE -> {
+            }
+        }
+        return propiedad;
+    }
+
+    private static ModificarPropiedadRequest modificacion(String calle, String numero, TipologiaEnum tipologia,
+            String superficieTotal, String superficieCubierta) {
+        return new ModificarPropiedadRequest(tipologia, calle, numero, null, null, null, null, "Córdoba", "Córdoba",
+                new BigDecimal(superficieTotal),
+                superficieCubierta != null ? new BigDecimal(superficieCubierta) : null);
+    }
+
+    private static DireccionNormalizada direccionIndependencia1200() {
+        return new DireccionNormalizada("INDEPENDENCIA 1200, Capital, Córdoba", "Córdoba", "Córdoba", "Capital",
+                LATITUD_1200, LONGITUD_1200);
     }
 
     private static CrearPropiedadRequest solicitud(String calle, String ciudad, String superficieCubierta) {
