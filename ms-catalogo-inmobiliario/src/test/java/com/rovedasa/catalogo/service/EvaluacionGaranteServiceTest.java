@@ -51,8 +51,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EvaluacionGaranteServiceTest {
 
-    // CUIT ficticio con dígito verificador válido (no corresponde a una persona real)
-    private static final String CUIT_GARANTE = "20123456700";
+    // CUIT de prueba con dígito verificador válido, con DNI en el rango 80-89 millones, que hoy no está asignado
+    private static final String CUIT_GARANTE = "20888888889";
     private static final Long PERSONA_ID = 10L;
     // 13:30 UTC = 10:30 en Argentina
     private static final Clock RELOJ_FIJO = Clock.fixed(Instant.parse("2026-11-12T13:30:00Z"),

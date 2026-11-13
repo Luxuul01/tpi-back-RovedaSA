@@ -33,8 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(SecurityConfig.class)
 class PersonaControllerTest {
 
-    // CUIT ficticio con dígito verificador válido (no corresponde a una persona real)
-    private static final String CUIT_GARANTE = "20123456700";
+    // CUIT de prueba con dígito verificador válido, con DNI en el rango 80-89 millones, que hoy no está asignado
+    private static final String CUIT_GARANTE = "20888888889";
 
     @Autowired
     private MockMvc mockMvc;
