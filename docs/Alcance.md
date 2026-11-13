@@ -432,8 +432,8 @@ Estado al 03/11/2026. Ir tachando a medida que se resuelven.
 
 ### Catálogo (Dev 2)
 - [ ] `POST /api/personas/{id}/evaluacion-solvencia`, con el cliente BCRA Central de Deudores (coordinar con Dev 4).
-- [ ] `PUT /api/propiedades/{id}`.
-- [ ] `PATCH /api/propiedades/{id}/baja`.
+- [x] `PUT /api/propiedades/{id}`.
+- [x] `PATCH /api/propiedades/{id}/baja`.
 - [ ] Opcional: devolver 409 en lugar de 400 ante transiciones de estado inválidas.
 
 ### Contratos (Dev 3 y Esteban — división de tareas a definir)
