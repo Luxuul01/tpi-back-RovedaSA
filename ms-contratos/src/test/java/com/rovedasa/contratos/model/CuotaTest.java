@@ -1,7 +1,5 @@
 package com.rovedasa.contratos.model;
 
-import com.rovedasa.commons.enums.EstadoContratoEnum;
-import com.rovedasa.commons.enums.EstadoCuotaEnum;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +48,27 @@ class CuotaTest {
         assertTrue(cuota.estaVencida(fechaConsulta));
         assertEquals(new BigDecimal("5000.00"), cuota.calcularMora(fechaConsulta, porcentajeDiario));
         assertEquals(new BigDecimal("505000.00"), cuota.calcularTotalConMora(fechaConsulta, porcentajeDiario));
+    }
+
+    @Test
+    @DisplayName("Una cuota PAGADA no genera mora aunque se consulte después de su vencimiento")
+    void noDebeCalcularMoraDeCuotaPagada() {
+        Cuota cuota = Cuota.builder()
+                .nroCuota(1)
+                .periodoMes(7)
+                .periodoAnio(2026)
+                .fechaVencimiento(LocalDate.of(2026, 7, 10))
+                .montoBase(new BigDecimal("500000.00"))
+                .estado(EstadoCuotaEnum.PAGADA)
+                .fechaPago(LocalDate.of(2026, 7, 18))
+                .build();
+
+        LocalDate fechaConsulta = LocalDate.of(2026, 7, 30);
+        BigDecimal porcentajeDiario = new BigDecimal("0.1000");
+
+        assertFalse(cuota.estaVencida(fechaConsulta));
+        assertEquals(new BigDecimal("0.00"), cuota.calcularMora(fechaConsulta, porcentajeDiario));
+        assertEquals(new BigDecimal("500000.00"), cuota.calcularTotalConMora(fechaConsulta, porcentajeDiario));
     }
 
     @Test

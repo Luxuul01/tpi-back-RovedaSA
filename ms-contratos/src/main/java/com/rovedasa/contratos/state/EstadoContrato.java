@@ -1,6 +1,6 @@
 package com.rovedasa.contratos.state;
 
-import com.rovedasa.commons.enums.EstadoContratoEnum;
+import com.rovedasa.contratos.model.EstadoContratoEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.contratos.model.Ajuste;
 import com.rovedasa.contratos.model.Contrato;

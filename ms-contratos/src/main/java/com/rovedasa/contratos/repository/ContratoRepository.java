@@ -1,6 +1,6 @@
 package com.rovedasa.contratos.repository;
 
-import com.rovedasa.commons.enums.EstadoContratoEnum;
+import com.rovedasa.contratos.model.EstadoContratoEnum;
 import com.rovedasa.contratos.model.Contrato;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
