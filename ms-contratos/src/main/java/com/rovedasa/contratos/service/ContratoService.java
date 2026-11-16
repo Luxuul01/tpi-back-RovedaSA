@@ -28,6 +28,7 @@ import com.rovedasa.contratos.state.EstadoCreado;
 import com.rovedasa.contratos.state.EstadoSeniado;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -231,7 +232,6 @@ public class ContratoService {
             }
 
             contrato = contratoRepository.saveAndFlush(contrato);
-            cuotaService.guardarCuotas(cuotasIniciales);
         } catch (Exception e) {
             // COMPENSACIÓN: devolver propiedad a RESERVADA (estado anterior antes de ALQUILADA)
             log.error("Fallo al guardar el contrato tras activar {}. Compensando: devolviendo propiedad a RESERVADA.",
@@ -456,9 +456,7 @@ public class ContratoService {
         List<Cuota> nuevasCuotas = estadoActual.aplicarAjuste(contrato, ajuste);
 
         try {
-            ajusteRepository.save(ajuste);
             contrato = contratoRepository.saveAndFlush(contrato);
-            cuotaService.guardarCuotas(nuevasCuotas);
         } catch (Exception e) {
             log.error("Fallo al guardar ajuste y cuotas para contrato {}.", contratoId, e);
             throw new OperacionInvalidaException("Error al guardar el ajuste ICL.");
@@ -516,6 +514,7 @@ public class ContratoService {
     // ------------------------------------------------------------------
     // Ajuste periodico masivo
     // ------------------------------------------------------------------
+    @Scheduled(cron = "${contratos.ajuste-periodico.cron:0 0 2 * * *}")
     @Transactional
     public void ejecutarAjustePeriodico() {
         log.info("Ejecutando ajuste periodico de contratos activos");
@@ -615,14 +614,17 @@ public class ContratoService {
                 .ajustes(contrato.getAjustes().stream()
                         .map(a -> AjusteResponse.builder()
                                 .id(a.getId())
+                                .tipoIndice(a.getTipoIndice())
                                 .fechaAplicacion(a.getFechaAplicacion())
                                 .fechaIndiceDesde(a.getFechaIndiceDesde())
                                 .fechaIndiceHasta(a.getFechaIndiceHasta())
                                 .valorIndiceDesde(a.getValorIndiceDesde())
                                 .valorIndiceHasta(a.getValorIndiceHasta())
+                                .coeficiente(a.getCoeficiente())
                                 .montoAnterior(a.getMontoAnterior())
                                 .montoNuevo(a.getMontoNuevo())
                                 .porcentajeVariacion(a.getPorcentajeVariacion())
+                                .origen(a.getOrigen())
                                 .build())
                         .collect(Collectors.toList()))
                 .build();

@@ -7,11 +7,13 @@ import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import com.rovedasa.contratos.dto.PersonaResumenDTO;
+import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
@@ -39,7 +41,7 @@ public class CatalogoClient {
                         throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
                     })
                     .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible: " + res.getStatusCode());
+                        throw new CatalogoNoDisponibleException("Catálogo no disponible: " + res.getStatusCode());
                     })
                     .body(PropiedadDTO.class);
         } catch (RestClientResponseException e) {
@@ -47,7 +49,10 @@ public class CatalogoClient {
             if (e.getStatusCode().is4xxClientError()) {
                 throw traducirError4xx(e.getStatusCode(), "Propiedad", propiedadId);
             }
-            throw new RuntimeException("Catálogo no disponible", e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible", e);
+        } catch (RestClientException e) {
+            log.error("Error de comunicación llamando a GET /propiedades/{}", propiedadId, e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible", e);
         }
     }
 
@@ -64,7 +69,7 @@ public class CatalogoClient {
                         throw traducirError4xx(res.getStatusCode(), "Persona", personaId);
                     })
                     .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible: " + res.getStatusCode());
+                        throw new CatalogoNoDisponibleException("Catálogo no disponible: " + res.getStatusCode());
                     })
                     .body(PersonaResumenDTO.class);
         } catch (RestClientResponseException e) {
@@ -72,7 +77,10 @@ public class CatalogoClient {
             if (e.getStatusCode().is4xxClientError()) {
                 throw traducirError4xx(e.getStatusCode(), "Persona", personaId);
             }
-            throw new RuntimeException("Catálogo no disponible", e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible", e);
+        } catch (RestClientException e) {
+            log.error("Error de comunicación llamando a GET /personas/{}", personaId, e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible", e);
         }
     }
 
@@ -89,7 +97,7 @@ public class CatalogoClient {
                         throw traducirError4xx(res.getStatusCode(), "Garante", garanteId);
                     })
                     .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("BCRA no disponible para evaluar garante: " + res.getStatusCode());
+                        throw new CatalogoNoDisponibleException("BCRA o catálogo no disponible para evaluar garante: " + res.getStatusCode());
                     })
                     .body(ValidacionGaranteDTO.class);
         } catch (RestClientResponseException e) {
@@ -97,7 +105,10 @@ public class CatalogoClient {
             if (e.getStatusCode().is4xxClientError()) {
                 throw traducirError4xx(e.getStatusCode(), "Garante", garanteId);
             }
-            throw new RuntimeException("BCRA no disponible para evaluar garante", e);
+            throw new CatalogoNoDisponibleException("BCRA o catálogo no disponible para evaluar garante", e);
+        } catch (RestClientException e) {
+            log.error("Error de comunicación llamando a POST /personas/{}/evaluacion-solvencia", garanteId, e);
+            throw new CatalogoNoDisponibleException("BCRA o catálogo no disponible para evaluar garante", e);
         }
     }
 
@@ -123,7 +134,7 @@ public class CatalogoClient {
                         throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
                     })
                     .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible al cambiar estado: " + res.getStatusCode());
+                        throw new CatalogoNoDisponibleException("Catálogo no disponible al cambiar estado: " + res.getStatusCode());
                     })
                     .body(PropiedadDTO.class);
         } catch (RestClientResponseException e) {
@@ -131,14 +142,16 @@ public class CatalogoClient {
             if (e.getStatusCode().is4xxClientError()) {
                 throw traducirError4xx(e.getStatusCode(), "Propiedad", propiedadId);
             }
-            throw new RuntimeException("Catálogo no disponible al cambiar estado de propiedad", e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible al cambiar estado de propiedad", e);
+        } catch (RestClientException e) {
+            log.error("Error de comunicación llamando a PATCH /propiedades/{}/estado", propiedadId, e);
+            throw new CatalogoNoDisponibleException("Catálogo no disponible al cambiar estado de propiedad", e);
         }
     }
 
     /**
      * Traduce un 4xx del catálogo a las excepciones de negocio compartidas:
      * 404 -> RecursoNoEncontradoException (HTTP 404), 400/409/422 -> OperacionInvalidaException (HTTP 400).
-     * Los errores de credenciales/permisos o de cuota se dejan como error interno para no confundir al cliente.
      */
     private static RuntimeException traducirError4xx(HttpStatusCode status, String recurso, Long id) {
         if (status.value() == 404) {
@@ -149,7 +162,7 @@ public class CatalogoClient {
             return new OperacionInvalidaException(
                     "El catálogo rechazó la operación sobre " + recurso + " con ID " + id + ": " + status);
         }
-        return new RuntimeException(
+        return new CatalogoNoDisponibleException(
                 "El catálogo rechazó la solicitud sobre " + recurso + " con ID " + id + ": " + status);
     }
 }

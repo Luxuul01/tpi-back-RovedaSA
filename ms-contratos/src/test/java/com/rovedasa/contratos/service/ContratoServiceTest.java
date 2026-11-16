@@ -125,6 +125,54 @@ class ContratoServiceTest {
                 () -> contratoService.listarContratos("GARANTE", "sub-garante"));
     }
 
+    @Test
+    @DisplayName("aplicarAjuste guarda por cascade del contrato sin duplicar cuotas y mapea origen, tipoIndice y coeficiente")
+    void aplicarAjusteGuardaPorCascadeYMapeaCamposCompletos() {
+        ContratoRepository repo = mock(ContratoRepository.class);
+        AjusteRepository ajusteRepo = mock(AjusteRepository.class);
+        CuotaService cuotas = mock(CuotaService.class);
+        CatalogoClient catalogo = mock(CatalogoClient.class);
+        IndiceService indices = mock(IndiceService.class);
+        Clock reloj = Clock.fixed(Instant.parse("2026-10-01T12:00:00Z"), ZoneOffset.UTC);
+
+        ContratoService service = new ContratoService(
+                repo, ajusteRepo, cuotas, catalogo, new EstadoContratoFactory(), indices, reloj);
+
+        Contrato contrato = crearContrato(1L, "sub-prop-1", "sub-inq-1");
+        when(repo.findById(1L)).thenReturn(Optional.of(contrato));
+        when(repo.saveAndFlush(any(Contrato.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cuotas.toResumenList(anyList(), any(), any())).thenReturn(List.of());
+        when(indices.calcularAjuste(
+                any(), any(), any(), any())).thenReturn(
+                com.rovedasa.contratos.dto.ResultadoAjusteDTO.builder()
+                        .tipoIndice(com.rovedasa.contratos.model.TipoIndiceEnum.ICL)
+                        .fechaIndiceDesde(LocalDate.of(2026, 7, 1))
+                        .fechaIndiceHasta(LocalDate.of(2026, 10, 1))
+                        .valorIndiceDesde(new BigDecimal("10.000000"))
+                        .valorIndiceHasta(new BigDecimal("12.500000"))
+                        .coeficiente(new BigDecimal("1.250000"))
+                        .montoAnterior(new BigDecimal("500000.00"))
+                        .montoNuevo(new BigDecimal("625000.00"))
+                        .porcentajeVariacion(new BigDecimal("25.0000"))
+                        .origen(com.rovedasa.contratos.dto.OrigenDatoEnum.CACHE_CONTINGENCIA)
+                        .build());
+
+        com.rovedasa.contratos.dto.AplicarAjusteRequest req = com.rovedasa.contratos.dto.AplicarAjusteRequest.builder()
+                .fechaIndiceDesde(LocalDate.of(2026, 7, 1))
+                .fechaIndiceHasta(LocalDate.of(2026, 10, 1))
+                .build();
+
+        ContratoResponse resp = service.aplicarAjuste(1L, req, "sub-admin");
+
+        verify(repo).saveAndFlush(contrato);
+        verify(ajusteRepo, never()).save(any());
+        verify(cuotas, never()).guardarCuotas(anyList());
+        assertEquals(1, resp.getAjustes().size());
+        assertEquals(com.rovedasa.contratos.model.TipoIndiceEnum.ICL, resp.getAjustes().get(0).getTipoIndice());
+        assertEquals(new BigDecimal("1.250000"), resp.getAjustes().get(0).getCoeficiente());
+        assertEquals(com.rovedasa.contratos.dto.OrigenDatoEnum.CACHE_CONTINGENCIA, resp.getAjustes().get(0).getOrigen());
+    }
+
     private Contrato crearContrato(Long id, String propietarioKeycloakId, String inquilinoKeycloakId) {
         return Contrato.builder()
                 .id(id)
