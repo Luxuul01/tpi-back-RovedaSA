@@ -7,12 +7,16 @@ import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import com.rovedasa.contratos.dto.PersonaResumenDTO;
+import com.rovedasa.contratos.exception.ServicioExternoNoDisponibleException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+
+import java.util.function.Supplier;
 
 /**
  * Cliente HTTP hacia ms-catálogo-inmobiliario (puerto 8081, directo, no por gateway).
@@ -31,49 +35,37 @@ public class CatalogoClient {
      * Deserializa directo a PropiedadDTO (Jackson ignora campos extra).
      */
     public PropiedadDTO obtenerPropiedad(Long propiedadId) {
-        try {
-            return catalogoRestClient.get()
-                    .uri("/propiedades/{id}", propiedadId)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                        throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible: " + res.getStatusCode());
-                    })
-                    .body(PropiedadDTO.class);
-        } catch (RestClientResponseException e) {
-            log.error("Error llamando a GET /propiedades/{} : {} {}", propiedadId, e.getStatusCode(), e.getStatusText());
-            if (e.getStatusCode().is4xxClientError()) {
-                throw traducirError4xx(e.getStatusCode(), "Propiedad", propiedadId);
-            }
-            throw new RuntimeException("Catálogo no disponible", e);
-        }
+        return ejecutarLlamada("Propiedad", propiedadId, "Catálogo no disponible",
+                () -> catalogoRestClient.get()
+                        .uri("/propiedades/{id}", propiedadId)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                            throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
+                        })
+                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                            throw new ServicioExternoNoDisponibleException(
+                                    "Catálogo no disponible: " + res.getStatusCode());
+                        })
+                        .body(PropiedadDTO.class));
     }
 
     /**
      * GET /api/personas/{id}
-     * Extrae keycloakUserId para guardarlo en el contrato.
+     * Extrae keycloakUserId y roles para validarlos al crear contratos.
      */
     public PersonaResumenDTO obtenerPersona(Long personaId) {
-        try {
-            return catalogoRestClient.get()
-                    .uri("/personas/{id}", personaId)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                        throw traducirError4xx(res.getStatusCode(), "Persona", personaId);
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible: " + res.getStatusCode());
-                    })
-                    .body(PersonaResumenDTO.class);
-        } catch (RestClientResponseException e) {
-            log.error("Error llamando a GET /personas/{} : {} {}", personaId, e.getStatusCode(), e.getStatusText());
-            if (e.getStatusCode().is4xxClientError()) {
-                throw traducirError4xx(e.getStatusCode(), "Persona", personaId);
-            }
-            throw new RuntimeException("Catálogo no disponible", e);
-        }
+        return ejecutarLlamada("Persona", personaId, "Catálogo no disponible",
+                () -> catalogoRestClient.get()
+                        .uri("/personas/{id}", personaId)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                            throw traducirError4xx(res.getStatusCode(), "Persona", personaId);
+                        })
+                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                            throw new ServicioExternoNoDisponibleException(
+                                    "Catálogo no disponible: " + res.getStatusCode());
+                        })
+                        .body(PersonaResumenDTO.class));
     }
 
     /**
@@ -81,24 +73,18 @@ public class CatalogoClient {
      * Se invoca en activar(). Si esSolvente es false, el llamador debe rechazar la activación.
      */
     public ValidacionGaranteDTO evaluarGarante(Long garanteId) {
-        try {
-            return catalogoRestClient.post()
-                    .uri("/personas/{id}/evaluacion-solvencia", garanteId)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                        throw traducirError4xx(res.getStatusCode(), "Garante", garanteId);
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("BCRA no disponible para evaluar garante: " + res.getStatusCode());
-                    })
-                    .body(ValidacionGaranteDTO.class);
-        } catch (RestClientResponseException e) {
-            log.error("Error llamando a POST /personas/{}/evaluacion-solvencia : {} {}", garanteId, e.getStatusCode(), e.getStatusText());
-            if (e.getStatusCode().is4xxClientError()) {
-                throw traducirError4xx(e.getStatusCode(), "Garante", garanteId);
-            }
-            throw new RuntimeException("BCRA no disponible para evaluar garante", e);
-        }
+        return ejecutarLlamada("Garante", garanteId, "BCRA o catálogo no disponibles para evaluar garante",
+                () -> catalogoRestClient.post()
+                        .uri("/personas/{id}/evaluacion-solvencia", garanteId)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                            throw traducirError4xx(res.getStatusCode(), "Garante", garanteId);
+                        })
+                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                            throw new ServicioExternoNoDisponibleException(
+                                    "BCRA o catálogo no disponibles para evaluar garante: " + res.getStatusCode());
+                        })
+                        .body(ValidacionGaranteDTO.class));
     }
 
     /**
@@ -108,30 +94,39 @@ public class CatalogoClient {
      */
     public PropiedadDTO actualizarEstadoPropiedad(Long propiedadId, EstadoPropiedadEnum nuevoEstado,
                                                   Long inquilinoId, Long garanteId) {
-        try {
-            ActualizarEstadoPropiedadDTO body = ActualizarEstadoPropiedadDTO.builder()
-                    .nuevoEstado(nuevoEstado)
-                    .inquilinoId(inquilinoId)
-                    .garanteId(garanteId)
-                    .build();
+        ActualizarEstadoPropiedadDTO body = ActualizarEstadoPropiedadDTO.builder()
+                .nuevoEstado(nuevoEstado)
+                .inquilinoId(inquilinoId)
+                .garanteId(garanteId)
+                .build();
 
-            return catalogoRestClient.patch()
-                    .uri("/propiedades/{id}/estado", propiedadId)
-                    .body(body)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                        throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
-                    })
-                    .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                        throw new RuntimeException("Catálogo no disponible al cambiar estado: " + res.getStatusCode());
-                    })
-                    .body(PropiedadDTO.class);
+        return ejecutarLlamada("Propiedad", propiedadId, "Catálogo no disponible al cambiar estado de propiedad",
+                () -> catalogoRestClient.patch()
+                        .uri("/propiedades/{id}/estado", propiedadId)
+                        .body(body)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
+                            throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
+                        })
+                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
+                            throw new ServicioExternoNoDisponibleException(
+                                    "Catálogo no disponible al cambiar estado: " + res.getStatusCode());
+                        })
+                        .body(PropiedadDTO.class));
+    }
+
+    private <T> T ejecutarLlamada(String recurso, Long id, String mensajeIndisponible, Supplier<T> llamada) {
+        try {
+            return llamada.get();
         } catch (RestClientResponseException e) {
-            log.error("Error llamando a PATCH /propiedades/{}/estado : {} {}", propiedadId, e.getStatusCode(), e.getStatusText());
+            log.error("Error HTTP desde catálogo para {} {}: {} {}", recurso, id, e.getStatusCode(), e.getStatusText());
             if (e.getStatusCode().is4xxClientError()) {
-                throw traducirError4xx(e.getStatusCode(), "Propiedad", propiedadId);
+                throw traducirError4xx(e.getStatusCode(), recurso, id);
             }
-            throw new RuntimeException("Catálogo no disponible al cambiar estado de propiedad", e);
+            throw new ServicioExternoNoDisponibleException(mensajeIndisponible, e);
+        } catch (RestClientException e) {
+            log.error("Error de comunicación con catálogo para {} {}: {}", recurso, id, e.getMessage());
+            throw new ServicioExternoNoDisponibleException(mensajeIndisponible, e);
         }
     }
 

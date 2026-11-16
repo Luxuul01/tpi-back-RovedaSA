@@ -11,6 +11,7 @@ import com.rovedasa.contratos.dto.AplicarAjusteRequest;
 import com.rovedasa.contratos.dto.ContratoResponse;
 import com.rovedasa.contratos.dto.CrearContratoRequest;
 import com.rovedasa.contratos.dto.CuotaResumenDTO;
+import com.rovedasa.contratos.dto.PersonaResumenDTO;
 import com.rovedasa.contratos.dto.RescisionResponse;
 import com.rovedasa.contratos.dto.RescindirContratoRequest;
 import com.rovedasa.contratos.dto.ResultadoAjusteDTO;
@@ -28,6 +29,7 @@ import com.rovedasa.contratos.state.EstadoCreado;
 import com.rovedasa.contratos.state.EstadoSeniado;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +70,10 @@ public class ContratoService {
                 && !request.getFechaFin().isAfter(request.getFechaInicio())) {
             throw new OperacionInvalidaException("La fecha de fin debe ser posterior a la fecha de inicio");
         }
+        if (request.getGaranteId().equals(request.getInquilinoId())
+                || request.getGaranteId().equals(request.getPropietarioId())) {
+            throw new OperacionInvalidaException("El garante no puede ser el inquilino ni el propietario (RN-02)");
+        }
 
         // 1. Validar que la propiedad exista y no esté INACTIVA ni ALQUILADA
         var propiedad = catalogoClient.obtenerPropiedad(request.getPropiedadId());
@@ -80,9 +86,14 @@ public class ContratoService {
                     "El propietario indicado no es el dueño de la propiedad " + request.getPropiedadId());
         }
 
-        // 2. Obtener keycloakUserId de propietario e inquilino para guardarlo en el contrato
+        // 2. Validar existencia, roles asignados (RN-02) y obtener keycloakUserId de propietario e inquilino
         var propietario = catalogoClient.obtenerPersona(request.getPropietarioId());
         var inquilino = catalogoClient.obtenerPersona(request.getInquilinoId());
+        var garante = catalogoClient.obtenerPersona(request.getGaranteId());
+
+        validarRolPersona(propietario, "PROPIETARIO");
+        validarRolPersona(inquilino, "INQUILINO");
+        validarRolPersona(garante, "GARANTE");
 
         if (propietario.getKeycloakUserId() == null) {
             throw new OperacionInvalidaException("El propietario no tiene usuario de Keycloak asociado");
@@ -516,6 +527,7 @@ public class ContratoService {
     // ------------------------------------------------------------------
     // Ajuste periodico masivo
     // ------------------------------------------------------------------
+    @Scheduled(cron = "${contratos.ajuste-periodico.cron:0 0 6 * * *}")
     @Transactional
     public void ejecutarAjustePeriodico() {
         log.info("Ejecutando ajuste periodico de contratos activos");
@@ -551,6 +563,13 @@ public class ContratoService {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+    private void validarRolPersona(PersonaResumenDTO persona, String rolEsperado) {
+        if (persona.getRoles() == null || !persona.getRoles().contains(rolEsperado)) {
+            throw new OperacionInvalidaException(
+                    "La persona con ID " + persona.getId() + " no posee el rol requerido " + rolEsperado + " (RN-02)");
+        }
+    }
+
     private Contrato buscarContrato(Long contratoId) {
         return contratoRepository.findById(contratoId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Contrato con ID " + contratoId + " no fue encontrado"));
