@@ -6,12 +6,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 /**
  * Configuración del cliente HTTP hacia ms-catalogo-inmobiliario.
@@ -68,11 +72,17 @@ public class RestClientConfig {
         };
     }
 
-    private static SimpleClientHttpRequestFactory crearFabricaConTimeouts(
+    /**
+     * Usa JdkClientHttpRequestFactory (java.net.http.HttpClient) en lugar de SimpleClientHttpRequestFactory
+     * porque HttpURLConnection no soporta el método HTTP PATCH hacia ms-catalogo-inmobiliario.
+     */
+    private static ClientHttpRequestFactory crearFabricaConTimeouts(
             int connectTimeoutMs, int readTimeoutMs) {
-        SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
-        fabrica.setConnectTimeout(connectTimeoutMs);
-        fabrica.setReadTimeout(readTimeoutMs);
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .build();
+        JdkClientHttpRequestFactory fabrica = new JdkClientHttpRequestFactory(httpClient);
+        fabrica.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         return fabrica;
     }
 }
