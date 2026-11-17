@@ -1,0 +1,3206 @@
+{
+  "info": {
+    "_postman_id": "f96ab8f5-d4b8-509b-9fcd-3bf7642a5f73",
+    "name": "RovedaSA - TPI Backend 2026",
+    "description": "Escenarios de la sección 12 del Alcance y comprobaciones C-01 a C-08.\n\nRequisitos: bases limpias (`docker compose down -v`) y los microservicios con el perfil `demo` (BCRA simulado). Ver README.\n\nEjecución: `npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{tokenAdmin}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// ---- Fechas relativas (las fijas de C-05 viven en el environment) ----",
+          "const iso = d => d.toISOString().slice(0, 10);",
+          "const hoy = new Date();",
+          "const mas = (dias) => { const d = new Date(hoy); d.setUTCDate(d.getUTCDate() + dias); return d; };",
+          "const mesesAtras = (m) => { const d = new Date(hoy); d.setUTCMonth(d.getUTCMonth() - m); return d; };",
+          "pm.environment.set('hoy', iso(hoy));",
+          "pm.environment.set('fechaFin', iso(mas(730)));",
+          "pm.environment.set('fechaLimiteSenia', iso(mas(10)));",
+          "pm.environment.set('inicioHace4Meses', iso(mesesAtras(4)));",
+          "pm.environment.set('finDesdeHace4Meses', iso(new Date(mesesAtras(4).getTime() + 730 * 86400000)));",
+          "",
+          "// ---- Renovación automática de los tokens de los tres usuarios ----",
+          "const env = pm.environment;",
+          "function renovar(usuario, clave, variable) {",
+          "  const vence = Number(env.get(variable + 'Vence') || 0);",
+          "  if (env.get(variable) && Date.now() < vence - 20000) { return; }",
+          "  pm.sendRequest({",
+          "    url: env.get('keycloakUrl') + '/realms/' + env.get('realm') + '/protocol/openid-connect/token',",
+          "    method: 'POST',",
+          "    header: { 'Content-Type': 'application/x-www-form-urlencoded' },",
+          "    body: { mode: 'urlencoded', urlencoded: [",
+          "      { key: 'grant_type', value: 'password' }, { key: 'client_id', value: env.get('clientId') },",
+          "      { key: 'username', value: usuario }, { key: 'password', value: clave }] }",
+          "  }, (err, res) => {",
+          "    if (!err && res.code === 200) {",
+          "      const j = res.json();",
+          "      env.set(variable, j.access_token);",
+          "      env.set(variable + 'Vence', Date.now() + j.expires_in * 1000);",
+          "    }",
+          "  });",
+          "}",
+          "if (!pm.request.url.toString().includes('openid-connect')) {",
+          "  renovar(env.get('adminUser'), env.get('adminPass'), 'tokenAdmin');",
+          "  renovar(env.get('propietarioUser'), env.get('propietarioPass'), 'tokenPropietario');",
+          "  renovar(env.get('inquilinoUser'), env.get('inquilinoPass'), 'tokenInquilino');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// T-01: toda respuesta que pasa por el Gateway trae el X-Correlation-ID (también los 401 y 403)",
+          "if (!pm.request.url.toString().includes('openid-connect')) {",
+          "  pm.test('Respuesta con X-Correlation-ID', () => pm.expect(pm.response.headers.get('X-Correlation-ID')).to.be.a('string').and.not.empty);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Autenticación",
+      "item": [
+        {
+          "name": "E-01 Token ADMINISTRADOR",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{adminUser}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{adminPass}}"
+                }
+              ]
+            },
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devuelve access_token', () => pm.expect(j.access_token).to.be.a('string'));",
+                  "pm.environment.set('tokenAdmin', j.access_token);",
+                  "pm.environment.set('tokenAdminVence', Date.now() + j.expires_in * 1000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-01 Token PROPIETARIO (propietario1)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{propietarioUser}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{propietarioPass}}"
+                }
+              ]
+            },
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devuelve access_token', () => pm.expect(j.access_token).to.be.a('string'));",
+                  "pm.environment.set('tokenPropietario', j.access_token);",
+                  "pm.environment.set('tokenPropietarioVence', Date.now() + j.expires_in * 1000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-01 Token INQUILINO (inquilino1)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{inquilinoUser}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{inquilinoPass}}"
+                }
+              ]
+            },
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devuelve access_token', () => pm.expect(j.access_token).to.be.a('string'));",
+                  "pm.environment.set('tokenInquilino', j.access_token);",
+                  "pm.environment.set('tokenInquilinoVence', Date.now() + j.expires_in * 1000);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Perfil demo: BCRA deudores y GeoRef sin caída simulada",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/catalogo/simulacion?bcraCaido=false&georefCaido=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Perfil demo: BCRA Estadísticas sin caída simulada",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/contratos/simulacion?bcraCaido=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Tokens de los 3 usuarios de prueba y estado inicial del simulador. La colección requiere el perfil demo y bases limpias."
+    },
+    {
+      "name": "01 Datos iniciales",
+      "item": [
+        {
+          "name": "E-02 Crear Propietario (vinculado a propietario1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitNuevo}}\",\n  \"nombre\": \"Propietario\",\n  \"apellido\": \"Prueba\",\n  \"roles\": [\n    \"PROPIETARIO\"\n  ],\n  \"email\": \"{{emailNuevo}}\",\n  \"ingresosMensualesDeclarados\": 1500000,\n  \"keycloakUserId\": \"00000000-0000-0000-0000-000000000002\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
+                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propietarioId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-02 Crear Inquilino (vinculado a inquilino1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitNuevo}}\",\n  \"nombre\": \"Inquilino\",\n  \"apellido\": \"Prueba\",\n  \"roles\": [\n    \"INQUILINO\"\n  ],\n  \"email\": \"{{emailNuevo}}\",\n  \"ingresosMensualesDeclarados\": 1500000,\n  \"keycloakUserId\": \"00000000-0000-0000-0000-000000000003\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
+                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('inquilinoId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-02 Crear Inquilino 2 (otro usuario)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitNuevo}}\",\n  \"nombre\": \"Inquilino\",\n  \"apellido\": \"Prueba\",\n  \"roles\": [\n    \"INQUILINO\"\n  ],\n  \"email\": \"{{emailNuevo}}\",\n  \"ingresosMensualesDeclarados\": 1500000,\n  \"keycloakUserId\": \"00001111-2222-3333-4444-555566667777\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
+                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('inquilino2Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-02 Crear Garante solvente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitNuevo}}\",\n  \"nombre\": \"Garante\",\n  \"apellido\": \"Prueba\",\n  \"roles\": [\n    \"GARANTE\"\n  ],\n  \"email\": \"{{emailNuevo}}\",\n  \"ingresosMensualesDeclarados\": 1500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
+                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('garanteId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-02 Crear Garante NO solvente (demo: situación 3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20888888811\",\n  \"nombre\": \"Garante\",\n  \"apellido\": \"Prueba\",\n  \"roles\": [\n    \"GARANTE\"\n  ],\n  \"email\": \"{{emailNuevo}}\",\n  \"ingresosMensualesDeclarados\": 1500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
+                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('garanteNoSolventeId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-01 Crear propiedad con dirección informal (GeoRef + tasación)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"900\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedadId', pm.response.json().id); }",
+                  "",
+                  "const p = pm.response.json();",
+                  "pm.test('Queda DISPONIBLE', () => pm.expect(p.estado).to.eql('DISPONIBLE'));",
+                  "pm.test('Dirección normalizada por GeoRef', () => pm.expect(p.direccionNormalizada).to.include('INDEPENDENCIA 900'));",
+                  "pm.test('Coordenadas', () => { pm.expect(p.latitud).to.be.a('number'); pm.expect(p.longitud).to.be.a('number'); });",
+                  "pm.test('Zona asignada', () => pm.expect(p.zonaNombre).to.be.a('string').and.not.empty);",
+                  "pm.test('Canon = valor m² x superficie computable', () =>",
+                  "  pm.expect(p.canonBaseSugerido).to.be.closeTo(p.precioSugeridoM2 * p.superficieComputableM2, 0.01));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad avenida colon 1500",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"avenida colon\",\n  \"numero\": \"1500\",\n  \"barrio\": \"Alberdi\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad2Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 1000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1000\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad3Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 1100",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1100\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad4Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 1200",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1200\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad5Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 1300",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1300\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad6Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad avenida colon 1700",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"avenida colon\",\n  \"numero\": \"1700\",\n  \"barrio\": \"Alberdi\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedadIpcId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 1400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1400\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad8Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "E-02 personas y E-03 propiedades con GeoRef (C-01)."
+    },
+    {
+      "name": "02 Proceso principal",
+      "item": [
+        {
+          "name": "E-04 Contrato A (borrador) sobre la propiedad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedadId}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoA', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-04 Contrato B (borrador competidor) sobre la misma propiedad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedadId}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilino2Id}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoB', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoA}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET propiedad {{propiedadId}} queda RESERVADA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedadId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Propiedad RESERVADA', () => pm.expect(pm.response.json().estado).to.eql('RESERVADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-02 Señar el contrato B -> rechazado (propiedad RESERVADA)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoB}} sigue CREADO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-03 Activar contrato A (garante solvente)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET propiedad {{propiedadId}} queda ALQUILADA",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedadId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Propiedad ALQUILADA', () => pm.expect(pm.response.json().estado).to.eql('ALQUILADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoB}} sigue CANCELADO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado CANCELADO', () => pm.expect(pm.response.json().estado).to.eql('CANCELADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-03 Cuotas del contrato A: 3 PENDIENTE de 500.000",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/cuotas"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const cuotas = pm.response.json();",
+                  "pm.test('3 cuotas', () => pm.expect(cuotas.length).to.eql(3));",
+                  "pm.test('Todas PENDIENTE de 500.000', () => cuotas.forEach(c => { pm.expect(c.estado).to.eql('PENDIENTE'); pm.expect(c.montoBase).to.eql(500000); }));",
+                  "pm.environment.set('cuotaId', cuotas[0].id);",
+                  "pm.environment.set('cuotaVencimiento', cuotas[0].fechaVencimiento);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-08a / E-07 inquilino1 lista sus contratos (solo los suyos)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const lista = pm.response.json();",
+                  "pm.test('Incluye el contrato A', () => pm.expect(lista.map(c => c.id)).to.include(Number(pm.environment.get('contratoA'))));",
+                  "pm.test('Solo contratos de inquilino1', () => lista.forEach(c => pm.expect(c.inquilinoKeycloakId).to.eql('00000000-0000-0000-0000-000000000003')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-07 propietario1 ve solo sus propiedades",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/propias",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPropietario}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const lista = pm.response.json();",
+                  "pm.test('Solo propiedades de propietario1', () => lista.forEach(p => pm.expect(p.propietarioId).to.eql(Number(pm.environment.get('propietarioId')))));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "E-04 a E-07: dos borradores, seña, activación con evaluación del garante, cuotas y aislamiento por rol (C-02, C-03, C-08a)."
+    },
+    {
+      "name": "03 Excepciones y reglas",
+      "item": [
+        {
+          "name": "N-01 CUIT con dígito verificador inválido -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20888888880\",\n  \"nombre\": \"Mal\",\n  \"apellido\": \"Cuit\",\n  \"roles\": [\n    \"GARANTE\"\n  ],\n  \"email\": \"mal{{$timestamp}}@test.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-01 CUIT duplicado -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20888888811\",\n  \"nombre\": \"Dup\",\n  \"apellido\": \"Cuit\",\n  \"roles\": [\n    \"GARANTE\"\n  ],\n  \"email\": \"dup{{$timestamp}}@test.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(409);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-02 Dirección inexistente -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"Calle Que No Existe Xyzzy\",\n  \"numero\": \"123\",\n  \"barrio\": \"Centro\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-03 Rol inexistente -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"20888888846\",\n  \"nombre\": \"Rol\",\n  \"apellido\": \"Malo\",\n  \"roles\": [\n    \"JEFE\"\n  ],\n  \"email\": \"rol{{$timestamp}}@test.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-03 Contrato con un garante como inquilino (RN-02) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad2Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{garanteId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-04 Contrato sobre una propiedad ALQUILADA -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedadId}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-05 Activar un contrato CANCELADO -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-08 Ajuste prematuro (no pasaron 3 meses) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{hoy}}\",\n  \"fechaIndiceHasta\": \"{{hoy}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-09 Finalizar antes del término -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/finalizar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-11 Transición inválida de la propiedad (DISPONIBLE -> ALQUILADA) -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad2Id}}/estado",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nuevoEstado\": \"ALQUILADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-04 Contrato C con garante NO solvente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad2Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteNoSolventeId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoC', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoC}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-04 / N-06 Activar con garante en situación 3 -> rechazado",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoC}} sigue SENIADO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-04 / N-07 Cancelar la seña -> CANCELADO",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/cancelar?motivo=Garante no solvente&retenerSenia=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda CANCELADO', () => pm.expect(pm.response.json().estado).to.eql('CANCELADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET propiedad {{propiedad2Id}} queda DISPONIBLE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad2Id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Propiedad DISPONIBLE', () => pm.expect(pm.response.json().estado).to.eql('DISPONIBLE'));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "N-01 a N-11 y C-04: validaciones, reglas de estado y garante no solvente."
+    },
+    {
+      "name": "04 Ciclo posterior",
+      "item": [
+        {
+          "name": "C-06 / E-08 Mora a 10 días del vencimiento: 5.000 y total 505.000",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}?fechaReferencia={{fechaMora}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const v = new Date(pm.environment.get('cuotaVencimiento') + 'T00:00:00Z');",
+                  "v.setUTCDate(v.getUTCDate() + 10);",
+                  "pm.variables.set('fechaMora', v.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Mora 5.000 (0,1 % x 10 días x 500.000)', () => pm.expect(c.montoMora).to.eql(5000));",
+                  "pm.test('Total 505.000', () => pm.expect(c.montoTotal).to.eql(505000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E-09 Pagar la cuota -> PAGADA",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}/pago"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda PAGADA', () => pm.expect(pm.response.json().estado).to.eql('PAGADA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-06 Cuota pagada: sin mora",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}?fechaReferencia={{fechaMora}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const v = new Date(pm.environment.get('cuotaVencimiento') + 'T00:00:00Z');",
+                  "v.setUTCDate(v.getUTCDate() + 10);",
+                  "pm.variables.set('fechaMora', v.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('PAGADA', () => pm.expect(c.estado).to.eql('PAGADA'));",
+                  "pm.test('Sin mora', () => pm.expect(Number(c.montoMora || 0)).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-10 Pagar una cuota ya PAGADA -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}/pago"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-05 Contrato D con inicio 01/07/2026",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad3Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{c05Desde}}\",\n  \"fechaFin\": \"{{c05Fin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoD', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoD}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoD}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-05 / E-10 Ajuste ICL 10,00 -> 12,50: +25 % y canon 625.000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{c05Desde}}\",\n  \"fechaIndiceHasta\": \"{{c05Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Canon 625.000', () => pm.expect(pm.response.json().montoActual).to.eql(625000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-05 Historial de ajustes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/ajustes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const a = pm.response.json()[0];",
+                  "pm.test('ICL', () => pm.expect(a.tipoIndice).to.eql('ICL'));",
+                  "pm.test('Coeficiente 1,25 y +25 %', () => { pm.expect(a.coeficiente).to.eql(1.25); pm.expect(a.porcentajeVariacion).to.eql(25); });",
+                  "pm.test('Valores del índice 10,00 y 12,50', () => { pm.expect(a.valorIndiceDesde).to.eql(10); pm.expect(a.valorIndiceHasta).to.eql(12.5); });",
+                  "pm.test('Origen BCRA', () => pm.expect(a.origen).to.eql('BCRA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-05 3 cuotas nuevas de 625.000",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/cuotas"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const nuevas = pm.response.json().filter(c => c.montoBase === 625000);",
+                  "pm.test('3 cuotas nuevas de 625.000', () => pm.expect(nuevas.length).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-08 Repetir el mismo ajuste -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{c05Desde}}\",\n  \"fechaIndiceHasta\": \"{{c05Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A-01 (adicional) Contrato pactado con IPC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedadIpcId}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{c05Desde}}\",\n  \"fechaFin\": \"{{c05Fin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10,\n  \"tipoIndice\": \"IPC\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Índice IPC', () => pm.expect(pm.response.json().tipoIndice).to.eql('IPC'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoIpc', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoIpc}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoIpc}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A-01 (adicional) Ajuste por IPC: 3 meses al 2 % = +6,12 %",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{c05Desde}}\",\n  \"fechaIndiceHasta\": \"{{c05Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Se ajustó por IPC', () => pm.expect(c.ajustes[0].tipoIndice).to.eql('IPC'));",
+                  "pm.test('Canon 530.604 (500.000 x 1,02³)', () => pm.expect(c.montoActual).to.be.closeTo(530604, 1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-07 Contrato E con 4 meses de antigüedad (frecuencia 6: tiene cuotas futuras)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad4Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{inicioHace4Meses}}\",\n  \"fechaFin\": \"{{finDesdeHace4Meses}}\",\n  \"frecuenciaAjusteMeses\": 6,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoE', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoE}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoE}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-07 / E-11 Rescindir: penalización 750.000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescindir",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaRescision\": \"{{hoy}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Penalización 750.000 (1,5 cánones, menos de 6 meses)', () => pm.expect(r.penalizacion).to.eql(750000));",
+                  "pm.test('Anula las cuotas futuras', () => pm.expect(r.cuotasAnuladas).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoE}} sigue RESCINDIDO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado RESCINDIDO', () => pm.expect(pm.response.json().estado).to.eql('RESCINDIDO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET propiedad {{propiedad4Id}} queda DISPONIBLE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad4Id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Propiedad DISPONIBLE', () => pm.expect(pm.response.json().estado).to.eql('DISPONIBLE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-07 Segunda rescisión -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescindir",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaRescision\": \"{{hoy}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-07 Cuotas futuras ANULADAS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/cuotas"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const anuladas = pm.response.json().filter(c => c.estado === 'ANULADA');",
+                  "pm.test('Hay cuotas ANULADAS', () => pm.expect(anuladas.length).to.be.above(0));",
+                  "if (anuladas.length) { pm.environment.set('cuotaAnuladaId', anuladas[0].id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-10 Pagar una cuota ANULADA -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaAnuladaId}}/pago"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "E-08 a E-11 y C-05 a C-07: mora, pago, ajuste por ICL (y el adicional por IPC) y rescisión."
+    },
+    {
+      "name": "05 Seguridad",
+      "item": [
+        {
+          "name": "S-01 / C-08e Sin token -> 401 (Gateway)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(401);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S-01 Token inválido -> 401 (Gateway)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer token.invalido.123"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(401);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S-02 / C-08c inquilino1 hace un POST -> 403 (Gateway)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"calle\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(403);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S-03 / C-08d propietario1 lista todas las propiedades -> 403 (servicio)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPropietario}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(403);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S-04 / C-08b inquilino1 pide el contrato de otro inquilino -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(404);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "S-04 inquilino1 pide las cuotas de un contrato ajeno -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/cuotas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(404);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "S-01 a S-04 y C-08: 401, 403 en el Gateway, 403 en el servicio y 404 ante recurso ajeno, siempre con ApiError."
+    },
+    {
+      "name": "06 Integraciones y contingencia",
+      "item": [
+        {
+          "name": "I-01 Simular caída de GeoRef",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/catalogo/simulacion?georefCaido=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-01 Crear propiedad con GeoRef caído -> 503",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"1500\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(503);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-01 GeoRef vuelve",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/catalogo/simulacion?georefCaido=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-02 Contrato G",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad8Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoG', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoG}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-02 Simular caída de la Central de Deudores",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/catalogo/simulacion?bcraCaido=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-02 Activar con la Central de Deudores caída -> 503",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(503);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoG}} sigue SENIADO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-02 Central de Deudores vuelve",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/catalogo/simulacion?bcraCaido=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-02 Reintentar la activación -> ACTIVO",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-03 Contrato H con inicio 01/07/2026",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad5Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{c05Desde}}\",\n  \"fechaFin\": \"{{c05Fin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoH', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoH}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoH}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-04 Contrato I con inicio 01/03/2026",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad6Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{i04Desde}}\",\n  \"fechaFin\": \"{{c05Fin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoI', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoI}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoI}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-03 Simular caída de la API Estadísticas del BCRA",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/contratos/simulacion?bcraCaido=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-03 / C-05 Ajuste con el BCRA caído usando el caché -> 625.000",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{c05Desde}}\",\n  \"fechaIndiceHasta\": \"{{c05Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Canon 625.000', () => pm.expect(c.montoActual).to.eql(625000));",
+                  "pm.test('Origen CACHE_CONTINGENCIA', () => pm.expect(c.ajustes[0].origen).to.eql('CACHE_CONTINGENCIA'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-04 Ajuste con el BCRA caído y sin dato en caché -> 503",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{i04Desde}}\",\n  \"fechaIndiceHasta\": \"{{i04Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(503);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoI}} sigue ACTIVO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-04 API Estadísticas vuelve",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/demo/contratos/simulacion?bcraCaido=false"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "T-01 El X-Correlation-ID del cliente llega al microservicio y vuelve en el error",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-ID",
+                "value": "coleccion-t01"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas/999999"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(404);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('Header igual al enviado', () => pm.expect(pm.response.headers.get('X-Correlation-ID')).to.eql('coleccion-t01'));",
+                  "pm.test('correlationId del ApiError igual al enviado', () => pm.expect(pm.response.json().correlationId).to.eql('coleccion-t01'));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "I-01 a I-04 y T-01: caídas simuladas con el perfil demo (GeoRef, Central de Deudores, Estadísticas) y trazabilidad."
+    }
+  ]
+}
