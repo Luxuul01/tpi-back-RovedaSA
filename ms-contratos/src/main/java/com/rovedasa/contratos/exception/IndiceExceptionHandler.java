@@ -12,6 +12,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 
@@ -19,7 +20,7 @@ import java.time.LocalDateTime;
  * Manejo de errores de servicios externos (503) y parámetros inválidos en ms-contratos.
  *
  * Tiene prioridad sobre el GlobalExceptionHandler de commons, que no contempla 503 ni
- * parámetros mal formados (esos casos terminarían en un 500). Devuelve el mismo ApiError
+ * parámetros mal formados ni rutas inexistentes (esos casos terminarían en un 500). Devuelve el mismo ApiError
  * de commons para que todas las respuestas de error tengan el mismo formato.
  */
 @Slf4j
@@ -56,6 +57,11 @@ public class IndiceExceptionHandler {
         String mensaje = "Falta el parámetro obligatorio '" + ex.getParameterName() + "'";
         log.warn("Parámetro faltante: {}", mensaje);
         return construir(HttpStatus.BAD_REQUEST, mensaje, request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleRutaInexistente(NoResourceFoundException ex, HttpServletRequest request) {
+        return construir(HttpStatus.NOT_FOUND, "No existe el recurso " + request.getRequestURI(), request);
     }
 
     private ResponseEntity<ApiError> construir(HttpStatus status, String mensaje, HttpServletRequest request) {
