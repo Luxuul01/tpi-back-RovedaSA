@@ -15,10 +15,14 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import reactor.core.publisher.Mono;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -41,26 +45,63 @@ public class GWConfig {
                 .route(p -> p.path("/api/cuotas/**").uri(uriContratos))
                 // 5. Ruteo a Contratos: Índices BCRA / ICL / Caché
                 .route(p -> p.path("/api/indices/**").uri(uriContratos))
+                // Simulación de servicios externos: los endpoints solo existen con el perfil "demo"
+                // de cada microservicio (fuera de ese perfil responden 404)
+                .route(p -> p.path("/api/demo/catalogo/**").uri(uriCatalogo))
+                .route(p -> p.path("/api/demo/contratos/**").uri(uriContratos))
+                // 6. Documentación OpenAPI unificada para Swagger UI del Gateway
+                .route("openapi-catalogo", p -> p.path("/v3/api-docs/catalogo")
+                        .filters(f -> f.rewritePath("/v3/api-docs/catalogo", "/v3/api-docs"))
+                        .uri(uriCatalogo))
+                .route("openapi-contratos", p -> p.path("/v3/api-docs/contratos")
+                        .filters(f -> f.rewritePath("/v3/api-docs/contratos", "/v3/api-docs"))
+                        .uri(uriContratos))
                 .build();
     }
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        // 401 y 403 con formato ApiError y X-Correlation-ID (Alcance, sección 10)
+        ErroresSeguridadHandler erroresSeguridad = new ErroresSeguridadHandler();
         return http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
+                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .pathMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .pathMatchers("/actuator/**").hasRole("ADMINISTRADOR")
-                        .pathMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .pathMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/webjars/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/**").hasRole("ADMINISTRADOR")
                         .pathMatchers(HttpMethod.PUT, "/api/**").hasRole("ADMINISTRADOR")
                         .pathMatchers(HttpMethod.PATCH, "/api/**").hasRole("ADMINISTRADOR")
                         .pathMatchers(HttpMethod.DELETE, "/api/**").hasRole("ADMINISTRADOR")
                         .pathMatchers(HttpMethod.GET, "/api/**").hasAnyRole("ADMINISTRADOR", "PROPIETARIO", "INQUILINO")
                         .anyExchange().authenticated())
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(erroresSeguridad)
+                        .accessDeniedHandler(erroresSeguridad))
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(erroresSeguridad)
+                        .accessDeniedHandler(erroresSeguridad)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(grantedAuthoritiesExtractor())))
                 .build();
+    }
+
+    /**
+     * Habilita CORS global en el Gateway para clientes web locales y Swagger UI sin usar credenciales por cookie.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("X-Correlation-ID", "Location"));
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     /**

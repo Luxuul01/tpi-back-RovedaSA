@@ -97,21 +97,30 @@ El alcance comprometido es el ajuste por ICL (F-13, RN-11, RN-12, C-05) y se eva
 
 - **Motivo:** desde la derogación de la Ley de Alquileres (DNU 70/2023) el índice de actualización se pacta libremente, y en los contratos nuevos se usa mucho el IPC. Con solo el ICL el sistema no cubría esos contratos.
 - **Costo:** casi ninguno. Usa la misma API del BCRA (otra variable), el mismo caché de contingencia y la misma fórmula de canon. No agrega servicios ni dependencias. `Contrato` y `Ajuste` ya guardan `tipo_indice`, con ICL por defecto.
-- **Qué cambia para el usuario:** el contrato puede pactar ICL o IPC, y las consultas de `/api/indices` permiten ver cualquiera de los dos y simular un ajuste antes de aplicarlo.
+- **Qué cambia para el usuario:** al crear el contrato se puede indicar `"tipoIndice": "IPC"` (si no se indica, queda ICL), y el ajuste usa el índice pactado. Las consultas de `/api/indices` permiten ver cualquiera de los dos y simular un ajuste antes de aplicarlo.
 
-## 5. Pendiente de Dev 4
+## 5. Perfil `demo` (BCRA simulado)
 
-- Perfil `demo` con el BCRA simulado (CUIT solvente, CUIT no solvente, ICL fijo y simulación de caída), para C-04 y C-05.
-- Colección Postman en `/coleccion` con las carpetas de la sección 12 del Alcance. El tramo de contratos depende de que exista su API.
+El repo no puede usar CUITs de personas reales (Alcance, sección 12). Con el perfil `demo`, cada microservicio reemplaza su cliente del BCRA por una subclase simulada (`@Primary @Profile("demo")`), sin tocar la lógica real:
+
+| Clase | Qué simula |
+| :--- | :--- |
+| `BcraCentralDeudoresClientSimulado` (catálogo) | `20888888811` situación 3 · `20888888838` 2 cheques rechazados · `20888888846` situación 2 · cualquier otro CUIT sin registros (solvente). DNIs de un rango no asignado |
+| `BcraEstadisticasClientSimulado` (contratos) | ICL 10,00 antes del 01/08/2026 y 12,50 desde esa fecha (C-05: +25 %) · IPC 2 % mensual, publicado con un mes de atraso |
+| `GeoRefClientSimulado` (catálogo) | GeoRef real, salvo con la caída simulada prendida |
+
+Las caídas se prenden y apagan con `PUT /api/demo/catalogo/simulacion?bcraCaido=&georefCaido=` y `PUT /api/demo/contratos/simulacion?bcraCaido=` (solo ADMINISTRADOR; fuera del perfil `demo` esos endpoints no existen). La caída simulada lanza `ResourceAccessException`, igual que un timeout real, así que se recorre el mismo camino de resiliencia de la sección 2.
+
+Cómo levantarlo: ver el README (sección "Perfil demo y Colección Postman").
 
 ## 6. Tests
 
 JUnit 5 + Mockito + `MockRestServiceServer`:
 
-- ms-contratos: `CalculadoraAjusteTest` (5), `IndiceServiceTest` (17: fallback al caché, último valor anterior sin límite, 503 sin caché, 429, 403, 400, fecha futura, falla al guardar el caché, ICL, IPC encadenado y el caso C-05) y `BcraEstadisticasClientTest` (5).
-- ms-catalogo: `EvaluadorSolvenciaTest` (6), `SolvenciaGaranteServiceTest` (5, incluye BCRA caído), `BcraCentralDeudoresClientTest` (3, incluye el 404 = sin registros) y `EvaluacionGaranteServiceTest` (7, de Dev 2).
+- ms-contratos: `CalculadoraAjusteTest` (5), `IndiceServiceTest` (17: fallback al caché, último valor anterior sin límite, 503 sin caché, 429, 403, 400, fecha futura, falla al guardar el caché, ICL, IPC encadenado y el caso C-05), `BcraEstadisticasClientTest` (5), `BcraEstadisticasClientSimuladoTest` (3) y en `ContratoServiceTest` el ajuste por IPC y el índice por defecto.
+- ms-catalogo: `EvaluadorSolvenciaTest` (6), `SolvenciaGaranteServiceTest` (5, incluye BCRA caído), `BcraCentralDeudoresClientTest` (3, incluye el 404 = sin registros), `BcraCentralDeudoresClientSimuladoTest` (2) y `EvaluacionGaranteServiceTest` (7, de Dev 2).
 
-Colección Postman: `postman/TPI-RovedaSA.postman_collection.json` + `postman/TPI-RovedaSA-local.postman_environment.json`.
+Colección Postman: `coleccion/RovedaSA.postman_collection.json` + `coleccion/local.postman_environment.json` (98 requests, carpetas 00 a 06 de la sección 12 del Alcance; requiere el perfil `demo` y bases limpias).
 
 ## 7. Diagramas de secuencia
 

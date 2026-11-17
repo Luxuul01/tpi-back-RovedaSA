@@ -1,6 +1,5 @@
 package com.rovedasa.contratos.model;
 
-import com.rovedasa.commons.enums.EstadoCuotaEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -77,6 +76,11 @@ public class Cuota {
     @Column(name = "fecha_pago")
     private LocalDate fechaPago;
 
+    /**
+     * Indica si la cuota está vencida en la fecha de referencia.
+     * Solo las cuotas PENDIENTE generan mora: las PAGADAS y ANULADAS no
+     * acumulan recargo (RN-13, F-17 y C-06).
+     */
     public boolean estaVencida(LocalDate fechaReferencia) {
         return estado == EstadoCuotaEnum.PENDIENTE
                 && fechaReferencia != null

@@ -1,6 +1,7 @@
 package com.rovedasa.gateway.config;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.cloud.gateway.filter.factory.RewritePathGatewayFilterFactory;
 import org.springframework.cloud.gateway.handler.predicate.PathRoutePredicateFactory;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -64,9 +65,10 @@ class GWConfigTest {
     }
 
     @Test
-    void configurarRutas_registraCincoRutasEsperadas() {
+    void configurarRutas_registraNueveRutasEsperadasIncluyendoOpenApiYDemo() {
         StaticApplicationContext context = new StaticApplicationContext();
         context.registerBean(PathRoutePredicateFactory.class);
+        context.registerBean(RewritePathGatewayFilterFactory.class);
         context.refresh();
         RouteLocatorBuilder builder = new RouteLocatorBuilder(context);
 
@@ -77,6 +79,9 @@ class GWConfigTest {
 
         List<Route> routes = locator.getRoutes().collectList().block();
         assertNotNull(routes);
-        assertEquals(5, routes.size());
+        assertEquals(9, routes.size());
+        Set<String> routeIds = routes.stream().map(Route::getId).collect(Collectors.toSet());
+        assertTrue(routeIds.contains("openapi-catalogo"));
+        assertTrue(routeIds.contains("openapi-contratos"));
     }
 }

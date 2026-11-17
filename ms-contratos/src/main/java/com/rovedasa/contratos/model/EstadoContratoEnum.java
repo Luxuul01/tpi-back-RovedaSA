@@ -1,4 +1,4 @@
-package com.rovedasa.commons.enums;
+package com.rovedasa.contratos.model;
 
 public enum EstadoContratoEnum {
     CREADO,

@@ -71,7 +71,7 @@ services:
     container_name: tpi-ms-catalogo
     restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
     ports:
       - "8081:8081"
     volumes:
@@ -97,7 +97,7 @@ services:
     container_name: tpi-ms-contratos
     restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
     ports:
       - "8082:8082"
     volumes:

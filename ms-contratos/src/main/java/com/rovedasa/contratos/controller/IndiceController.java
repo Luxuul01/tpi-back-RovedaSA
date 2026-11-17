@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,6 +32,7 @@ import java.time.LocalDate;
 @Tag(name = "Índices BCRA", description = "ICL e IPC del BCRA con caché de contingencia")
 @RestController
 @RequestMapping("/api/indices")
+@PreAuthorize("hasAnyRole('ADMINISTRADOR', 'PROPIETARIO', 'INQUILINO')")
 @RequiredArgsConstructor
 public class IndiceController {
 
