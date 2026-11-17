@@ -112,6 +112,41 @@ Si preferís ejecutar los microservicios Java directamente desde tu IDE o consol
 
 ---
 
+## 🧪 Perfil `demo` y Colección Postman
+
+### Perfil `demo` (BCRA simulado)
+El repositorio no puede usar CUITs de personas reales, así que para probar los escenarios del BCRA (garante no solvente, ICL fijo y caídas) los microservicios tienen un perfil `demo` que reemplaza las APIs del BCRA por un simulador (Alcance, sección 12). Fuera de ese perfil se usan las APIs reales.
+
+| Simulación | Comportamiento en el perfil `demo` |
+| :--- | :--- |
+| Central de Deudores | `20888888811`: situación 3 (no solvente) · `20888888838`: 2 cheques rechazados (no solvente) · `20888888846`: situación 2 (solvente) · cualquier otro CUIT: sin registros (solvente) |
+| Estadísticas (ICL) | 10,00 antes del 01/08/2026 y 12,50 desde esa fecha: un ajuste del 01/07/2026 al 01/10/2026 da +25 % (C-05) |
+| Estadísticas (IPC) | 2 % mensual, publicado con un mes de atraso |
+| Caídas simuladas | `PUT /api/demo/catalogo/simulacion?bcraCaido=true&georefCaido=true` y `PUT /api/demo/contratos/simulacion?bcraCaido=true` (rol ADMINISTRADOR; `false` para volver) |
+
+GeoRef sigue siendo el real en el perfil `demo`; solo se puede simular su caída. Los CUITs de prueba usan DNIs de un rango no asignado (88.888.88x).
+
+Levantar con Docker Compose usando el perfil `demo`:
+```bash
+# bash
+PERFIL_SERVICIOS=docker,demo docker compose up -d --build
+# PowerShell
+$env:PERFIL_SERVICIOS="docker,demo"; docker compose up -d --build
+```
+Sin Docker para los servicios Java: `./mvnw -pl ms-catalogo-inmobiliario spring-boot:run -Dspring-boot.run.profiles=demo` (igual para `ms-contratos`).
+
+### Colección Postman (`/coleccion`)
+Cubre los escenarios de la sección 12 del Alcance y las comprobaciones C-01 a C-08, en las carpetas 00 Autenticación · 01 Datos iniciales · 02 Proceso principal · 03 Excepciones y reglas · 04 Ciclo posterior · 05 Seguridad · 06 Integraciones y contingencia. Los tokens de los 3 usuarios se renuevan solos.
+
+Se ejecuta sobre **bases limpias** y con el **perfil `demo`**:
+```bash
+docker compose down -v
+PERFIL_SERVICIOS=docker,demo docker compose up -d --build
+npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json
+```
+
+---
+
 ## 📊 Centralización de Logs y Observabilidad (Stack PLG)
 
 El ecosistema implementa el pipeline de 4 etapas recomendado por la cátedra (**Apunte 24**) bajo el principio *12-Factor App*:
