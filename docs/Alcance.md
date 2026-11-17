@@ -191,7 +191,7 @@ Imagen y definición: [Diagramas.md — C4 Contenedores](./Diagramas.md#c4---con
 | db-contratos | PostgreSQL 16 | 5433 | Base exclusiva de contratos. |
 | Promtail / Loki / Grafana | Stack PLG | — / 3100 / 3000 | Recolección, almacenamiento y consulta de logs por `X-Correlation-ID`. |
 
-**Comunicaciones clave:** el Gateway enruta `/api/propiedades/**` y `/api/personas/**` al catálogo, y `/api/contratos/**` y `/api/cuotas/**` a contratos (TokenRelay). ms-contratos llama al catálogo por REST (RestClient) con un token de servicio (client credentials). `inmobiliaria-commons` es una **librería**, no un contenedor.
+**Comunicaciones clave:** el Gateway enruta `/api/propiedades/**` y `/api/personas/**` al catálogo, y `/api/contratos/**`, `/api/cuotas/**` y `/api/indices/**` a contratos (TokenRelay). ms-contratos llama al catálogo por REST (RestClient) con un token de servicio (client credentials). `inmobiliaria-commons` es una **librería**, no un contenedor.
 
 ---
 
@@ -437,18 +437,18 @@ Estado al 03/11/2026. Ir tachando a medida que se resuelven.
 - [ ] Opcional: devolver 409 en lugar de 400 ante transiciones de estado inválidas.
 
 ### Contratos (Dev 3 y Esteban — división de tareas a definir)
-- [ ] Guardar `propietario_keycloak_id` e `inquilino_keycloak_id` en el contrato al crearlo (obtenidos de `GET /api/personas/{id}`).
-- [ ] Un único `GET /api/contratos` que filtre según el rol (no implementar `/mis-contratos` ni `/propietario`).
-- [ ] Cuota con estado `PAGADA` y `fecha_pago`, y `PATCH /api/cuotas/{id}/pago`.
-- [ ] Inyectar `java.time.Clock` (no usar `LocalDate.now()` directo).
-- [ ] Compensación si falla el guardado local después de llamar al catálogo.
+- [x] Guardar `propietario_keycloak_id` e `inquilino_keycloak_id` en el contrato al crearlo (obtenidos de `GET /api/personas/{id}`).
+- [x] Un único `GET /api/contratos` que filtre según el rol (no implementar `/mis-contratos` ni `/propietario`).
+- [x] Cuota con estado `PAGADA` y `fecha_pago`, y `PATCH /api/cuotas/{id}/pago`.
+- [x] Inyectar `java.time.Clock` (no usar `LocalDate.now()` directo).
+- [x] Compensación si falla el guardado local después de llamar al catálogo.
 - [x] Mover `EstadoContratoEnum`, `EstadoCuotaEnum` y `CuotaResumenDTO` de commons a ms-contratos, y agregar `PAGADA` a `EstadoCuotaEnum`.
 - [ ] Sugerencia de división (no acordada): Dev 3 se ocupa de Contrato, el patrón State, las transiciones y la integración con el catálogo. Esteban se ocupa de Cuota (generación, mora, pago y anulación), las consultas filtradas por rol y el `Clock`.
 
 ### BCRA, ICL y QA (Dev 4)
-- [ ] Clientes BCRA Central de Deudores y Estadísticas (probar temprano los certificados SSL).
+- [x] Clientes BCRA Central de Deudores y Estadísticas (probar temprano los certificados SSL).
 - [ ] Perfil `demo` con el BCRA simulado.
-- [ ] Caché del ICL y regla de "último valor publicado anterior".
+- [x] Caché del ICL y regla de "último valor publicado anterior".
 - [ ] Colección Postman en `/coleccion` (migrar desde `ms-catalogo-inmobiliario/http/catalogo.http`) con tests y Newman.
 
 ### Equipo
