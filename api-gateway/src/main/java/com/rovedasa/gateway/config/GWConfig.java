@@ -45,6 +45,10 @@ public class GWConfig {
                 .route(p -> p.path("/api/cuotas/**").uri(uriContratos))
                 // 5. Ruteo a Contratos: Índices BCRA / ICL / Caché
                 .route(p -> p.path("/api/indices/**").uri(uriContratos))
+                // Simulación de servicios externos: los endpoints solo existen con el perfil "demo"
+                // de cada microservicio (fuera de ese perfil responden 404)
+                .route(p -> p.path("/api/demo/catalogo/**").uri(uriCatalogo))
+                .route(p -> p.path("/api/demo/contratos/**").uri(uriContratos))
                 // 6. Documentación OpenAPI unificada para Swagger UI del Gateway
                 .route("openapi-catalogo", p -> p.path("/v3/api-docs/catalogo")
                         .filters(f -> f.rewritePath("/v3/api-docs/catalogo", "/v3/api-docs"))
@@ -57,6 +61,8 @@ public class GWConfig {
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        // 401 y 403 con formato ApiError y X-Correlation-ID (Alcance, sección 10)
+        ErroresSeguridadHandler erroresSeguridad = new ErroresSeguridadHandler();
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
@@ -71,7 +77,12 @@ public class GWConfig {
                         .pathMatchers(HttpMethod.DELETE, "/api/**").hasRole("ADMINISTRADOR")
                         .pathMatchers(HttpMethod.GET, "/api/**").hasAnyRole("ADMINISTRADOR", "PROPIETARIO", "INQUILINO")
                         .anyExchange().authenticated())
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(erroresSeguridad)
+                        .accessDeniedHandler(erroresSeguridad))
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(erroresSeguridad)
+                        .accessDeniedHandler(erroresSeguridad)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(grantedAuthoritiesExtractor())))
                 .build();
     }

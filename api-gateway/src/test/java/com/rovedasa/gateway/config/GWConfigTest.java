@@ -65,7 +65,7 @@ class GWConfigTest {
     }
 
     @Test
-    void configurarRutas_registraSieteRutasEsperadasIncluyendoOpenApi() {
+    void configurarRutas_registraNueveRutasEsperadasIncluyendoOpenApiYDemo() {
         StaticApplicationContext context = new StaticApplicationContext();
         context.registerBean(PathRoutePredicateFactory.class);
         context.registerBean(RewritePathGatewayFilterFactory.class);
@@ -79,7 +79,7 @@ class GWConfigTest {
 
         List<Route> routes = locator.getRoutes().collectList().block();
         assertNotNull(routes);
-        assertEquals(7, routes.size());
+        assertEquals(9, routes.size());
         Set<String> routeIds = routes.stream().map(Route::getId).collect(Collectors.toSet());
         assertTrue(routeIds.contains("openapi-catalogo"));
         assertTrue(routeIds.contains("openapi-contratos"));
