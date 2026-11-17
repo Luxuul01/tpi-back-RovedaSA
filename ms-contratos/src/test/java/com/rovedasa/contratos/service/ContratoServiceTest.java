@@ -7,6 +7,10 @@ import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import com.rovedasa.contratos.client.CatalogoClient;
 import com.rovedasa.contratos.dto.ContratoResponse;
+import com.rovedasa.contratos.model.TipoIndiceEnum;
+import com.rovedasa.contratos.dto.ResultadoAjusteDTO;
+import com.rovedasa.contratos.dto.OrigenDatoEnum;
+import com.rovedasa.contratos.dto.AplicarAjusteRequest;
 import com.rovedasa.contratos.dto.CrearContratoRequest;
 import com.rovedasa.contratos.dto.PersonaResumenDTO;
 import com.rovedasa.contratos.model.Contrato;
@@ -31,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -227,6 +232,64 @@ class ContratoServiceTest {
         assertEquals(com.rovedasa.contratos.model.TipoIndiceEnum.ICL, resp.getAjustes().get(0).getTipoIndice());
         assertEquals(new BigDecimal("1.250000"), resp.getAjustes().get(0).getCoeficiente());
         assertEquals(com.rovedasa.contratos.dto.OrigenDatoEnum.CACHE_CONTINGENCIA, resp.getAjustes().get(0).getOrigen());
+    }
+
+    @Test
+    @DisplayName("IPC: un contrato pactado con IPC se ajusta por IPC y nunca por ICL")
+    void aplicarAjusteUsaElIndiceDelContrato() {
+        ContratoRepository repo = mock(ContratoRepository.class);
+        CuotaService cuotas = mock(CuotaService.class);
+        IndiceService indices = mock(IndiceService.class);
+        Clock reloj = Clock.fixed(Instant.parse("2026-10-01T12:00:00Z"), ZoneOffset.UTC);
+        ContratoService service = new ContratoService(repo, mock(AjusteRepository.class), cuotas,
+                mock(CatalogoClient.class), new EstadoContratoFactory(), indices, reloj);
+
+        Contrato contrato = crearContrato(1L, "sub-prop-1", "sub-inq-1");
+        contrato.setTipoIndice(TipoIndiceEnum.IPC);
+        LocalDate desde = LocalDate.of(2026, 7, 1);
+        LocalDate hasta = LocalDate.of(2026, 10, 1);
+        when(repo.findById(1L)).thenReturn(Optional.of(contrato));
+        when(repo.saveAndFlush(any(Contrato.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cuotas.toResumenList(anyList(), any(), any())).thenReturn(List.of());
+        when(indices.calcularAjuste(eq(TipoIndiceEnum.IPC), any(), eq(desde), eq(hasta))).thenReturn(
+                ResultadoAjusteDTO.builder().tipoIndice(TipoIndiceEnum.IPC)
+                        .fechaIndiceDesde(desde).fechaIndiceHasta(hasta)
+                        .valorIndiceDesde(BigDecimal.ONE).valorIndiceHasta(new BigDecimal("1.058086"))
+                        .coeficiente(new BigDecimal("1.058086")).montoAnterior(new BigDecimal("500000.00"))
+                        .montoNuevo(new BigDecimal("529042.89")).porcentajeVariacion(new BigDecimal("5.81"))
+                        .origen(OrigenDatoEnum.BCRA).build());
+
+        ContratoResponse resp = service.aplicarAjuste(1L,
+                AplicarAjusteRequest.builder().fechaIndiceDesde(desde).fechaIndiceHasta(hasta).build(), "sub-admin");
+
+        verify(indices).calcularAjuste(eq(TipoIndiceEnum.IPC), any(), eq(desde), eq(hasta));
+        verify(indices, never()).calcularAjuste(eq(TipoIndiceEnum.ICL), any(), any(), any());
+        assertEquals(TipoIndiceEnum.IPC, resp.getTipoIndice());
+        assertEquals(new BigDecimal("529042.89"), resp.getMontoActual());
+    }
+
+    @Test
+    @DisplayName("Crear contrato: sin índice queda ICL (alcance comprometido) y con IPC queda IPC")
+    void crearContratoGuardaElIndicePactado() {
+        when(catalogoClient.obtenerPropiedad(1L)).thenReturn(PropiedadDTO.builder()
+                .id(1L).propietarioId(10L).estado(EstadoPropiedadEnum.DISPONIBLE).build());
+        when(catalogoClient.obtenerPersona(10L)).thenReturn(PersonaResumenDTO.builder()
+                .id(10L).keycloakUserId("sub-prop").roles(Set.of("PROPIETARIO")).build());
+        when(catalogoClient.obtenerPersona(20L)).thenReturn(PersonaResumenDTO.builder()
+                .id(20L).keycloakUserId("sub-inq").roles(Set.of("INQUILINO")).build());
+        when(catalogoClient.obtenerPersona(30L)).thenReturn(PersonaResumenDTO.builder()
+                .id(30L).keycloakUserId(null).roles(Set.of("GARANTE")).build());
+        when(contratoRepository.save(any(Contrato.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CrearContratoRequest.CrearContratoRequestBuilder base = CrearContratoRequest.builder()
+                .propiedadId(1L).propietarioId(10L).inquilinoId(20L).garanteId(30L)
+                .fechaInicio(LocalDate.of(2026, 8, 1)).fechaFin(LocalDate.of(2028, 8, 1))
+                .frecuenciaAjusteMeses(3).montoInicial(new BigDecimal("500000.00"))
+                .porcentajeMoraDiaria(new BigDecimal("0.10")).diaVencimientoMes(10);
+
+        assertEquals(TipoIndiceEnum.ICL, contratoService.crearContrato(base.build()).getTipoIndice());
+        assertEquals(TipoIndiceEnum.IPC,
+                contratoService.crearContrato(base.tipoIndice(TipoIndiceEnum.IPC).build()).getTipoIndice());
     }
 
     private Contrato crearContrato(Long id, String propietarioKeycloakId, String inquilinoKeycloakId) {

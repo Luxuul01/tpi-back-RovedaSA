@@ -1,5 +1,6 @@
 package com.rovedasa.contratos.dto;
 
+import com.rovedasa.contratos.model.TipoIndiceEnum;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -45,6 +46,12 @@ public class CrearContratoRequest {
     @NotNull(message = "La frecuencia de ajuste es obligatoria")
     @Positive(message = "La frecuencia de ajuste debe ser mayor a cero")
     private Integer frecuenciaAjusteMeses;
+
+    /**
+     * Índice pactado para los ajustes: ICL (por defecto, si no se informa) o IPC.
+     * El IPC es una funcionalidad adicional al alcance comprometido (ver docs/BCRA-Resiliencia.md).
+     */
+    private TipoIndiceEnum tipoIndice;
 
     @NotNull(message = "El monto inicial es obligatorio")
     @Positive(message = "El monto inicial debe ser mayor a cero")

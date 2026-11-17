@@ -165,9 +165,9 @@ public class ContratoController {
     }
 
     // ------------------------------------------------------------------
-    // Aplicar ajuste por ICL (POST /api/contratos/{id}/ajustes)
+    // Aplicar ajuste por el índice del contrato (POST /api/contratos/{id}/ajustes)
     // ------------------------------------------------------------------
-    @Operation(summary = "Aplicar ajuste por ICL a un contrato activo y generar nuevas cuotas")
+    @Operation(summary = "Aplicar ajuste por el índice del contrato (ICL o IPC) a un contrato activo y generar nuevas cuotas")
     @PostMapping("/{id}/ajustes")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> aplicarAjuste(

@@ -1,5 +1,6 @@
 package com.rovedasa.contratos.dto;
 
+import com.rovedasa.contratos.model.TipoIndiceEnum;
 import com.rovedasa.contratos.model.EstadoContratoEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,6 +32,7 @@ public class ContratoResponse {
     private LocalDate fechaFin;
     private LocalDate fechaRescision;
     private Integer frecuenciaAjusteMeses;
+    private TipoIndiceEnum tipoIndice;
     private BigDecimal montoInicial;
     private BigDecimal montoActual;
     private BigDecimal montoSenia;

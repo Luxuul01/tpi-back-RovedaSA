@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDate;
 
 /**
- * DTO de entrada para aplicar un ajuste por ICL (POST /api/contratos/{id}/ajustes).
+ * DTO de entrada para aplicar un ajuste por el índice del contrato, ICL o IPC (POST /api/contratos/{id}/ajustes).
  */
 @Data
 @Builder

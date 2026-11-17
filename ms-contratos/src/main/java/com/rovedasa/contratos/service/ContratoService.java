@@ -113,6 +113,7 @@ public class ContratoService {
                 .fechaInicio(request.getFechaInicio())
                 .fechaFin(request.getFechaFin())
                 .frecuenciaAjusteMeses(request.getFrecuenciaAjusteMeses())
+                .tipoIndice(request.getTipoIndice() != null ? request.getTipoIndice() : TipoIndiceEnum.ICL)
                 .montoInicial(request.getMontoInicial())
                 .montoActual(request.getMontoInicial())
                 .porcentajeMoraDiaria(request.getPorcentajeMoraDiaria())
@@ -424,11 +425,11 @@ public class ContratoService {
     }
 
     // ------------------------------------------------------------------
-    // Aplicar ajuste por ICL (ACTIVO -> ACTIVO + nuevas cuotas)
+    // Aplicar ajuste por el índice del contrato, ICL o IPC (ACTIVO -> ACTIVO + nuevas cuotas)
     // ------------------------------------------------------------------
     @Transactional
     public ContratoResponse aplicarAjuste(Long contratoId, AplicarAjusteRequest request, String usuarioKeycloakId) {
-        log.info("Aplicando ajuste ICL a contrato {} desde {} hasta {}", contratoId, request.getFechaIndiceDesde(), request.getFechaIndiceHasta());
+        log.info("Aplicando ajuste a contrato {} desde {} hasta {}", contratoId, request.getFechaIndiceDesde(), request.getFechaIndiceHasta());
 
         Contrato contrato = contratoRepository.findById(contratoId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Contrato con ID " + contratoId + " no fue encontrado"));
@@ -439,9 +440,9 @@ public class ContratoService {
                     "Solo se puede aplicar ajuste a un contrato en estado ACTIVO. Estado actual: " + contrato.getEstado());
         }
 
-        // Obtener índices ICL (Dev 4: IndiceService con caché y fallback)
+        // Índice pactado en el contrato: ICL por defecto o IPC (Dev 4: IndiceService con caché y fallback)
         ResultadoAjusteDTO resultado = indiceService.calcularAjuste(
-                TipoIndiceEnum.ICL,
+                contrato.getTipoIndice(),
                 contrato.getMontoActual(),
                 request.getFechaIndiceDesde(),
                 request.getFechaIndiceHasta());
@@ -469,7 +470,7 @@ public class ContratoService {
             contrato = contratoRepository.saveAndFlush(contrato);
         } catch (Exception e) {
             log.error("Fallo al guardar ajuste y cuotas para contrato {}.", contratoId, e);
-            throw new OperacionInvalidaException("Error al guardar el ajuste ICL.");
+            throw new OperacionInvalidaException("Error al guardar el ajuste " + contrato.getTipoIndice() + ".");
         }
 
         log.info("Ajuste aplicado a contrato {}: nuevo monto={}, variacion={}%, nuevas cuotas: {}",
@@ -619,6 +620,7 @@ public class ContratoService {
                 .fechaFin(contrato.getFechaFin())
                 .fechaRescision(contrato.getFechaRescision())
                 .frecuenciaAjusteMeses(contrato.getFrecuenciaAjusteMeses())
+                .tipoIndice(contrato.getTipoIndice())
                 .montoInicial(contrato.getMontoInicial())
                 .montoActual(contrato.getMontoActual())
                 .montoSenia(contrato.getMontoSenia())
