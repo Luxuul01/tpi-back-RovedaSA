@@ -86,4 +86,3 @@ public class RestClientConfig {
         return fabrica;
     }
 }
-

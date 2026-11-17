@@ -7,7 +7,7 @@ import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import com.rovedasa.contratos.dto.PersonaResumenDTO;
-import com.rovedasa.contratos.exception.ServicioExternoNoDisponibleException;
+import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
@@ -43,7 +43,7 @@ public class CatalogoClient {
                             throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
                         })
                         .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new ServicioExternoNoDisponibleException(
+                            throw new CatalogoNoDisponibleException(
                                     "Catálogo no disponible: " + res.getStatusCode());
                         })
                         .body(PropiedadDTO.class));
@@ -62,7 +62,7 @@ public class CatalogoClient {
                             throw traducirError4xx(res.getStatusCode(), "Persona", personaId);
                         })
                         .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new ServicioExternoNoDisponibleException(
+                            throw new CatalogoNoDisponibleException(
                                     "Catálogo no disponible: " + res.getStatusCode());
                         })
                         .body(PersonaResumenDTO.class));
@@ -73,7 +73,7 @@ public class CatalogoClient {
      * Se invoca en activar(). Si esSolvente es false, el llamador debe rechazar la activación.
      */
     public ValidacionGaranteDTO evaluarGarante(Long garanteId) {
-        return ejecutarLlamada("Garante", garanteId, "BCRA o catálogo no disponibles para evaluar garante",
+        return ejecutarLlamada("Garante", garanteId, "BCRA o catálogo no disponible para evaluar garante",
                 () -> catalogoRestClient.post()
                         .uri("/personas/{id}/evaluacion-solvencia", garanteId)
                         .retrieve()
@@ -81,8 +81,8 @@ public class CatalogoClient {
                             throw traducirError4xx(res.getStatusCode(), "Garante", garanteId);
                         })
                         .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new ServicioExternoNoDisponibleException(
-                                    "BCRA o catálogo no disponibles para evaluar garante: " + res.getStatusCode());
+                            throw new CatalogoNoDisponibleException(
+                                    "BCRA o catálogo no disponible para evaluar garante: " + res.getStatusCode());
                         })
                         .body(ValidacionGaranteDTO.class));
     }
@@ -109,7 +109,7 @@ public class CatalogoClient {
                             throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
                         })
                         .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new ServicioExternoNoDisponibleException(
+                            throw new CatalogoNoDisponibleException(
                                     "Catálogo no disponible al cambiar estado: " + res.getStatusCode());
                         })
                         .body(PropiedadDTO.class));
@@ -123,17 +123,16 @@ public class CatalogoClient {
             if (e.getStatusCode().is4xxClientError()) {
                 throw traducirError4xx(e.getStatusCode(), recurso, id);
             }
-            throw new ServicioExternoNoDisponibleException(mensajeIndisponible, e);
+            throw new CatalogoNoDisponibleException(mensajeIndisponible, e);
         } catch (RestClientException e) {
             log.error("Error de comunicación con catálogo para {} {}: {}", recurso, id, e.getMessage());
-            throw new ServicioExternoNoDisponibleException(mensajeIndisponible, e);
+            throw new CatalogoNoDisponibleException(mensajeIndisponible, e);
         }
     }
 
     /**
      * Traduce un 4xx del catálogo a las excepciones de negocio compartidas:
      * 404 -> RecursoNoEncontradoException (HTTP 404), 400/409/422 -> OperacionInvalidaException (HTTP 400).
-     * Los errores de credenciales/permisos o de cuota se dejan como error interno para no confundir al cliente.
      */
     private static RuntimeException traducirError4xx(HttpStatusCode status, String recurso, Long id) {
         if (status.value() == 404) {
@@ -144,7 +143,7 @@ public class CatalogoClient {
             return new OperacionInvalidaException(
                     "El catálogo rechazó la operación sobre " + recurso + " con ID " + id + ": " + status);
         }
-        return new RuntimeException(
+        return new CatalogoNoDisponibleException(
                 "El catálogo rechazó la solicitud sobre " + recurso + " con ID " + id + ": " + status);
     }
 }

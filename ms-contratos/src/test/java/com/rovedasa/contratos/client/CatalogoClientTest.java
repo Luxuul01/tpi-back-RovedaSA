@@ -1,7 +1,7 @@
 package com.rovedasa.contratos.client;
 
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
-import com.rovedasa.contratos.exception.ServicioExternoNoDisponibleException;
+import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -25,7 +25,7 @@ class CatalogoClientTest {
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
-        assertThrows(ServicioExternoNoDisponibleException.class, () -> client.evaluarGarante(5L));
+        assertThrows(CatalogoNoDisponibleException.class, () -> client.evaluarGarante(5L));
         server.verify();
     }
 

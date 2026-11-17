@@ -1,7 +1,6 @@
 package com.rovedasa.contratos.dto;
 
 import jakarta.validation.constraints.Future;
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -37,7 +36,6 @@ public class CrearContratoRequest {
     private Long garanteId;
 
     @NotNull(message = "La fecha de inicio es obligatoria")
-    @FutureOrPresent(message = "La fecha de inicio no puede ser pasada")
     private LocalDate fechaInicio;
 
     @NotNull(message = "La fecha de fin es obligatoria")
