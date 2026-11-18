@@ -15,10 +15,41 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ValidadorCuitTest {
 
     @Test
-    void debeNormalizarDejandoSoloDigitos() {
+    void debeNormalizarLosDosFormatosAceptados() {
         assertEquals("20123456786", ValidadorCuit.normalizar("20-12345678-6"));
-        assertEquals("20123456786", ValidadorCuit.normalizar(" 20.12345678 6 "));
+        assertEquals("20123456786", ValidadorCuit.normalizar("20123456786"));
+        // Solo se recortan los espacios de los extremos
+        assertEquals("20123456786", ValidadorCuit.normalizar(" 20-12345678-6 "));
         assertNull(ValidadorCuit.normalizar(null));
+    }
+
+    // B2: antes se borraba todo lo que no fuera dígito y "20-ABC12345678-6" pasaba como 20123456786
+    @Test
+    void noDebeRescatarDigitosMezcladosConOtrosCaracteres() {
+        assertEquals("20-ABC12345678-6", ValidadorCuit.normalizar("20-ABC12345678-6"));
+        assertEquals("20.12345678 6", ValidadorCuit.normalizar(" 20.12345678 6 "));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "20-ABC12345678-6",   // letras en el medio
+            "20.12345678.6",      // otro separador
+            "20 12345678 6",      // espacios en el medio
+            "2012345678-6",       // guiones en otra posición
+            "20-123456786",
+            "20--12345678-6",
+            "+20123456786"
+    })
+    void debeRechazarCualquierOtroCaracterOFormato(String cuit) {
+        assertFalse(ValidadorCuit.esValido(cuit), cuit);
+    }
+
+    @Test
+    void debeEnmascararParaLosLogs() {
+        assertEquals("20-****5678-6", ValidadorCuit.enmascarar("20123456786"));
+        assertEquals("20-****5678-6", ValidadorCuit.enmascarar("20-12345678-6"));
+        assertEquals("***", ValidadorCuit.enmascarar("20-ABC12345678-6"));
+        assertEquals("***", ValidadorCuit.enmascarar(null));
     }
 
     @ParameterizedTest

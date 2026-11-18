@@ -1,6 +1,9 @@
+# Perfil docker: nombres de servicio de la red interna del docker compose. La contraseña de la base no tiene
+# valor por defecto: si el compose no la pasa, el servicio no arranca (en lugar de usar una contraseña de demo).
 spring:
   datasource:
     url: jdbc:postgresql://db-catalogo:5432/catalogo_db
+    password: ${CATALOGO_DB_PASSWORD}
   security:
     oauth2:
       resourceserver:

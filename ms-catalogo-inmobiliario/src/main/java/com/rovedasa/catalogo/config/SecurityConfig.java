@@ -23,7 +23,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
  * Dos capas de autorización (RN-16):
  *   1. Por URL (esta clase): POST, PUT, PATCH y DELETE sobre /api/** solo para ADMINISTRADOR. Se evalúa en
  *      la cadena de filtros, antes de que Spring MVC lea y valide el body: un rol sin permiso recibe 403
- *      aunque el body sea inválido. Los GET solo exigen estar autenticado.
+ *      aunque el body sea inválido. Los GET solo exigen estar autenticado. Actuator (salvo health) es solo
+ *      para ADMINISTRADOR: loggers permite cambiar niveles de log y metrics expone datos internos.
  *   2. Por método: cada endpoint mantiene su @PreAuthorize (por ejemplo, GET /propias es solo PROPIETARIO).
  */
 @Configuration
@@ -33,6 +34,7 @@ public class SecurityConfig {
 
     private static final String ROL_ADMINISTRADOR = "ADMINISTRADOR";
     private static final String RUTAS_API = "/api/**";
+    private static final String RUTAS_ACTUATOR = "/actuator/**";
 
     // Alcance, sección 10: solo Swagger/OpenAPI y el health check son públicos
     private static final String[] RUTAS_PUBLICAS = {
@@ -52,6 +54,8 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(RUTAS_PUBLICAS).permitAll()
+                // Después de las públicas: /actuator/health ya quedó permitido arriba
+                .requestMatchers(RUTAS_ACTUATOR).hasRole(ROL_ADMINISTRADOR)
                 .requestMatchers(HttpMethod.POST, RUTAS_API).hasRole(ROL_ADMINISTRADOR)
                 .requestMatchers(HttpMethod.PUT, RUTAS_API).hasRole(ROL_ADMINISTRADOR)
                 .requestMatchers(HttpMethod.PATCH, RUTAS_API).hasRole(ROL_ADMINISTRADOR)

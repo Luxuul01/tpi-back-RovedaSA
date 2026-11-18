@@ -5,6 +5,8 @@ import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
 import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
+import com.rovedasa.catalogo.exception.ConflictoException;
+import com.rovedasa.catalogo.exception.EstadoPropiedadInesperadoException;
 import com.rovedasa.catalogo.exception.ServicioExternoNoDisponibleException;
 import com.rovedasa.catalogo.model.Persona;
 import com.rovedasa.catalogo.model.PrecioReferenciaZona;
@@ -14,6 +16,7 @@ import com.rovedasa.catalogo.model.enums.TipologiaEnum;
 import com.rovedasa.catalogo.repository.PersonaRepository;
 import com.rovedasa.catalogo.repository.PropiedadRepository;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
+import com.rovedasa.commons.dto.CompensarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -36,6 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -324,6 +329,161 @@ class PropiedadServiceTest {
                 () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.INACTIVA, null, null)));
     }
 
+    // --- actualizarEstado con estadoEsperado (contrato 1 con ms-contratos) ---
+
+    @Test
+    void estadoEsperadoQueCoincideAplicaLaTransicion() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        PropiedadDTO dto = propiedadService.actualizarEstado(10L,
+                cambioEsperando(EstadoPropiedadEnum.ALQUILADA, EstadoPropiedadEnum.RESERVADA));
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, dto.getEstado());
+    }
+
+    @Test
+    void estadoEsperadoDistintoLanza409SinCambiarNada() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        EstadoPropiedadInesperadoException ex = assertThrows(EstadoPropiedadInesperadoException.class,
+                () -> propiedadService.actualizarEstado(10L,
+                        cambioEsperando(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA)));
+
+        assertEquals("La propiedad está en estado RESERVADA y se esperaba ALQUILADA", ex.getMessage());
+        // Se mapea a 409 con el handler de ConflictoException (no es un recurso duplicado)
+        assertTrue(ex instanceof ConflictoException);
+        assertEquals(EstadoPropiedadEnum.RESERVADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+    }
+
+    // El 409 por estado esperado se evalúa antes que la transición: el que llama se entera de que cambió
+    @Test
+    void estadoEsperadoDistintoGanaSobreLaTransicionInvalida() {
+        propiedadDisponible();
+
+        assertThrows(EstadoPropiedadInesperadoException.class, () -> propiedadService.actualizarEstado(10L,
+                cambioEsperando(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA)));
+    }
+
+    @Test
+    void sinEstadoEsperadoSeComportaComoAntes() {
+        propiedadDisponible();
+
+        PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambioEsperando(EstadoPropiedadEnum.RESERVADA, null));
+
+        assertEquals(EstadoPropiedadEnum.RESERVADA, dto.getEstado());
+    }
+
+    // --- compensarEstado (contrato 2 con ms-contratos, Saga) ---
+
+    @Test
+    void compensarSenaVuelveADisponibleYDesvinculaPersonas() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        PropiedadDTO dto = propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.RESERVADA, EstadoPropiedadEnum.DISPONIBLE, null, null));
+
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, dto.getEstado());
+        assertNull(propiedad.getInquilino());
+        assertNull(propiedad.getGarante());
+    }
+
+    @Test
+    void compensarActivacionVuelveAReservadaConservandoPersonas() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        PropiedadDTO dto = propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.ALQUILADA, EstadoPropiedadEnum.RESERVADA, null, null));
+
+        assertEquals(EstadoPropiedadEnum.RESERVADA, dto.getEstado());
+        assertEquals(2L, dto.getInquilinoId());
+        assertSame(garante, propiedad.getGarante());
+        verifyNoInteractions(personaRepository);
+    }
+
+    @Test
+    void compensarCancelacionVuelveAReservadaConLasPersonasIndicadas() {
+        Propiedad propiedad = propiedadDisponible();
+        when(personaRepository.findById(2L)).thenReturn(Optional.of(inquilino));
+        when(personaRepository.findById(3L)).thenReturn(Optional.of(garante));
+
+        PropiedadDTO dto = propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.RESERVADA, 2L, 3L));
+
+        assertEquals(EstadoPropiedadEnum.RESERVADA, dto.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+        assertSame(garante, propiedad.getGarante());
+    }
+
+    @Test
+    void compensarRescisionVuelveAAlquiladaConElInquilino() {
+        Propiedad propiedad = propiedadDisponible();
+        when(personaRepository.findById(2L)).thenReturn(Optional.of(inquilino));
+        when(personaRepository.findById(3L)).thenReturn(Optional.of(garante));
+
+        PropiedadDTO dto = propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA, 2L, 3L));
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, dto.getEstado());
+        assertEquals(2L, dto.getInquilinoId());
+        assertSame(garante, propiedad.getGarante());
+    }
+
+    @Test
+    void compensarRescisionSinInquilinoLanzaOperacionInvalida() {
+        Propiedad propiedad = propiedadDisponible();
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.compensarEstado(10L,
+                        compensacion(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA, null, null)));
+
+        assertTrue(ex.getMessage().contains("inquilinoId"));
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+    }
+
+    @Test
+    void compensarConEstadoActualDistintoLanza409SinCambiarNada() {
+        Propiedad propiedad = propiedadDisponible();
+
+        EstadoPropiedadInesperadoException ex = assertThrows(EstadoPropiedadInesperadoException.class,
+                () -> propiedadService.compensarEstado(10L,
+                        compensacion(EstadoPropiedadEnum.ALQUILADA, EstadoPropiedadEnum.RESERVADA, null, null)));
+
+        assertEquals("La propiedad está en estado DISPONIBLE y se esperaba ALQUILADA", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            // No son el inverso de ninguna transición de RN-05
+            "ALQUILADA, DISPONIBLE",   // DISPONIBLE -> ALQUILADA no existe (se saltea la reserva)
+            "RESERVADA, ALQUILADA",    // ALQUILADA -> RESERVADA no existe
+            "DISPONIBLE, DISPONIBLE",  // mismo estado
+            "INACTIVA, DISPONIBLE",    // la baja lógica no se compensa por acá
+            "DISPONIBLE, INACTIVA"
+    })
+    void compensarUnParQueNoDeshaceUnaTransicionValidaLanzaOperacionInvalidaSinBuscarLaPropiedad(
+            EstadoPropiedadEnum actual, EstadoPropiedadEnum anterior) {
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.compensarEstado(10L, compensacion(actual, anterior, null, null)));
+
+        assertTrue(ex.getMessage().startsWith("No se puede compensar de " + actual + " a " + anterior));
+        verifyNoInteractions(propiedadRepository, personaRepository);
+    }
+
+    @Test
+    void compensarPropiedadInexistenteLanzaRecursoNoEncontrado() {
+        when(propiedadRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertThrows(RecursoNoEncontradoException.class, () -> propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.RESERVADA, EstadoPropiedadEnum.DISPONIBLE, null, null)));
+    }
+
     // --- modificar (F-06) ---
 
     @Test
@@ -591,11 +751,17 @@ class PropiedadServiceTest {
     }
 
     private static ActualizarEstadoPropiedadDTO cambio(EstadoPropiedadEnum estado, Long inquilinoId, Long garanteId) {
-        return ActualizarEstadoPropiedadDTO.builder()
-                .nuevoEstado(estado)
-                .inquilinoId(inquilinoId)
-                .garanteId(garanteId)
-                .build();
+        return new ActualizarEstadoPropiedadDTO(estado, null, inquilinoId, garanteId);
+    }
+
+    private static ActualizarEstadoPropiedadDTO cambioEsperando(EstadoPropiedadEnum estado,
+            EstadoPropiedadEnum estadoEsperado) {
+        return new ActualizarEstadoPropiedadDTO(estado, estadoEsperado, null, null);
+    }
+
+    private static CompensarEstadoPropiedadDTO compensacion(EstadoPropiedadEnum actual,
+            EstadoPropiedadEnum anterior, Long inquilinoId, Long garanteId) {
+        return new CompensarEstadoPropiedadDTO(actual, anterior, inquilinoId, garanteId);
     }
 
     private static PrecioReferenciaZona zona() {

@@ -1,6 +1,15 @@
-# Perfil local: solo baja el nivel de log de seguridad. La seguridad es la misma que en los demás perfiles
-# (ver SecurityConfig): solo Swagger/OpenAPI (/v3/api-docs/**, /swagger-ui/**) y /actuator/health son públicos;
-# el resto exige un JWT de Keycloak, y POST/PUT/PATCH/DELETE sobre /api/** exigen además el rol ADMINISTRADOR.
+# Perfil local: solo para depurar en el host. Muestra el SQL y sube el nivel de log de la aplicación.
+# La seguridad es la misma que en los demás perfiles (ver SecurityConfig): solo Swagger/OpenAPI (/v3/api-docs/**,
+# /swagger-ui/**) y /actuator/health son públicos; el resto exige un JWT de Keycloak, y POST/PUT/PATCH/DELETE
+# sobre /api/** exigen además el rol ADMINISTRADOR.
+spring:
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
 logging:
   level:
+    com.rovedasa: DEBUG
     org.springframework.security: INFO

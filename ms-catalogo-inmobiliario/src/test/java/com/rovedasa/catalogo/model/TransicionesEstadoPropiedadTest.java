@@ -44,4 +44,28 @@ class TransicionesEstadoPropiedadTest {
     void pasarAlMismoEstadoNoEsUnaTransicion(EstadoPropiedadEnum estado) {
         assertFalse(TransicionesEstadoPropiedad.puedeTransicionar(estado, estado));
     }
+
+    // Compensación: se puede volver de B a A solo si A -> B es una transición válida
+    @ParameterizedTest(name = "compensar {0} -> {1} permitido")
+    @CsvSource({
+            "RESERVADA, DISPONIBLE",
+            "ALQUILADA, RESERVADA",
+            "DISPONIBLE, RESERVADA",
+            "DISPONIBLE, ALQUILADA"
+    })
+    void compensacionesValidasSonLasInversasDeRn05(EstadoPropiedadEnum actual, EstadoPropiedadEnum anterior) {
+        assertTrue(TransicionesEstadoPropiedad.puedeCompensar(actual, anterior));
+    }
+
+    @ParameterizedTest(name = "compensar {0} -> {1} rechazado")
+    @CsvSource({
+            "ALQUILADA, DISPONIBLE",
+            "RESERVADA, ALQUILADA",
+            "INACTIVA, DISPONIBLE",
+            "DISPONIBLE, INACTIVA",
+            "RESERVADA, RESERVADA"
+    })
+    void compensacionesInvalidas(EstadoPropiedadEnum actual, EstadoPropiedadEnum anterior) {
+        assertFalse(TransicionesEstadoPropiedad.puedeCompensar(actual, anterior));
+    }
 }

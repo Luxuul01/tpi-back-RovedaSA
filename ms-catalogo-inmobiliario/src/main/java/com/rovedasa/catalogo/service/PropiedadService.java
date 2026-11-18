@@ -5,6 +5,7 @@ import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
 import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
+import com.rovedasa.catalogo.exception.EstadoPropiedadInesperadoException;
 import com.rovedasa.catalogo.mapper.PropiedadMapper;
 import com.rovedasa.catalogo.model.Persona;
 import com.rovedasa.catalogo.model.Propiedad;
@@ -14,6 +15,7 @@ import com.rovedasa.catalogo.repository.PersonaRepository;
 import com.rovedasa.catalogo.repository.PropiedadRepository;
 import com.rovedasa.catalogo.util.NormalizadorTexto;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
+import com.rovedasa.commons.dto.CompensarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
@@ -30,7 +32,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Alta, consulta, modificación, baja lógica y cambios de estado de propiedades (CU-01, CU-08 y F-06).
+ * Alta, consulta, modificación, baja lógica, cambios de estado y compensaciones de propiedades
+ * (CU-01, CU-08, F-06 y F-07).
  */
 @Slf4j
 @Service
@@ -190,9 +193,10 @@ public class PropiedadService {
 
     /**
      * Cambio de estado pedido por ms-contratos (seña, activación, cancelación, rescisión).
-     * Primero se valida la transición contra TransicionesEstadoPropiedad; después la entidad aplica sus
-     * propias guardas (ej. alquilar exige inquilino) y acá se resuelven las personas y sus roles.
-     * Dos cambios concurrentes sobre la misma propiedad los frena el @Version de Propiedad al hacer commit.
+     * Orden de las validaciones: existe (404), está en el estado esperado si se indicó (409), la transición
+     * es válida según TransicionesEstadoPropiedad (400). Después la entidad aplica sus propias guardas
+     * (ej. alquilar exige inquilino) y acá se resuelven las personas y sus roles.
+     * Dos cambios concurrentes sobre la misma propiedad los frena el @Version de Propiedad al hacer commit (409).
      */
     @Transactional
     public PropiedadDTO actualizarEstado(Long id, ActualizarEstadoPropiedadDTO solicitud) {
@@ -200,6 +204,9 @@ public class PropiedadService {
         EstadoPropiedadEnum estadoAnterior = propiedad.getEstado();
         EstadoPropiedadEnum estadoNuevo = solicitud.getNuevoEstado();
 
+        if (solicitud.getEstadoEsperado() != null && solicitud.getEstadoEsperado() != estadoAnterior) {
+            throw new EstadoPropiedadInesperadoException(estadoAnterior, solicitud.getEstadoEsperado());
+        }
         if (!TransicionesEstadoPropiedad.puedeTransicionar(estadoAnterior, estadoNuevo)) {
             throw new OperacionInvalidaException(String.format(
                     "No se puede pasar de %s a %s", estadoAnterior, estadoNuevo));
@@ -218,17 +225,77 @@ public class PropiedadService {
         return PropiedadMapper.aPropiedadDTO(propiedad);
     }
 
+    /**
+     * Compensación de la Saga de ms-contratos (contrato 2): deshace la transición estadoAnterior -> estadoActual
+     * cuando ms-contratos no pudo guardar su parte después de que el catálogo confirmó el cambio.
+     * Orden de las validaciones: el par es el inverso de una transición válida de RN-05 (400), existe (404),
+     * está en estadoActual (409). Pasa por el mismo @Version que el PATCH de estado: si otro proceso la
+     * cambió mientras tanto, el commit falla con 409.
+     *
+     * Pares posibles: RESERVADA -> DISPONIBLE (deshace la seña), ALQUILADA -> RESERVADA (deshace la activación),
+     * DISPONIBLE -> RESERVADA (deshace la cancelación de la seña) y DISPONIBLE -> ALQUILADA (deshace la
+     * rescisión o la finalización). En los dos últimos se reasignan las personas que pasa quien llama.
+     */
+    @Transactional
+    public PropiedadDTO compensarEstado(Long id, CompensarEstadoPropiedadDTO solicitud) {
+        EstadoPropiedadEnum estadoActual = solicitud.getEstadoActual();
+        EstadoPropiedadEnum estadoAnterior = solicitud.getEstadoAnterior();
+        if (!TransicionesEstadoPropiedad.puedeCompensar(estadoActual, estadoAnterior)) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede compensar de %s a %s: %s -> %s no es una transición válida que se pueda deshacer",
+                    estadoActual, estadoAnterior, estadoAnterior, estadoActual));
+        }
+
+        Propiedad propiedad = buscar(id);
+        if (propiedad.getEstado() != estadoActual) {
+            throw new EstadoPropiedadInesperadoException(propiedad.getEstado(), estadoActual);
+        }
+
+        switch (estadoActual) {
+            case RESERVADA -> propiedad.liberar();
+            case ALQUILADA -> propiedad.revertirAlquiler();
+            case DISPONIBLE -> {
+                if (estadoAnterior == EstadoPropiedadEnum.ALQUILADA) {
+                    restaurarAlquiler(propiedad, solicitud.getInquilinoId(), solicitud.getGaranteId());
+                } else {
+                    reservar(propiedad, solicitud.getInquilinoId(), solicitud.getGaranteId());
+                }
+            }
+            default -> throw new IllegalStateException("Compensación habilitada sin implementar: " + estadoActual);
+        }
+
+        log.warn("Compensación: la propiedad ID {} ({}) volvió de {} a {}", id, propiedad.getCodigo(),
+                estadoActual, propiedad.getEstado());
+        return PropiedadMapper.aPropiedadDTO(propiedad);
+    }
+
+    private void restaurarAlquiler(Propiedad propiedad, Long inquilinoId, Long garanteId) {
+        if (inquilinoId == null) {
+            throw new OperacionInvalidaException(
+                    "Para volver a ALQUILADA hay que indicar el inquilinoId del contrato que se restaura");
+        }
+        Persona inquilino = buscarPersonaConRol(inquilinoId, TipoPersonaEnum.INQUILINO);
+        Persona garante = garanteId != null ? buscarPersonaConRol(garanteId, TipoPersonaEnum.GARANTE) : null;
+        validarGarante(propiedad, inquilinoId, garanteId);
+        propiedad.restaurarAlquiler(inquilino, garante);
+    }
+
     private void reservar(Propiedad propiedad, Long inquilinoId, Long garanteId) {
         Persona inquilino = inquilinoId != null ? buscarPersonaConRol(inquilinoId, TipoPersonaEnum.INQUILINO) : null;
         Persona garante = garanteId != null ? buscarPersonaConRol(garanteId, TipoPersonaEnum.GARANTE) : null;
 
+        validarGarante(propiedad, inquilinoId, garanteId);
+        propiedad.reservar(inquilino, garante);
+    }
+
+    // RN-02: el garante no puede ser el inquilino ni el propietario
+    private static void validarGarante(Propiedad propiedad, Long inquilinoId, Long garanteId) {
         if (garanteId != null && Objects.equals(garanteId, inquilinoId)) {
             throw new OperacionInvalidaException("El garante no puede ser la misma persona que el inquilino");
         }
         if (garanteId != null && Objects.equals(garanteId, propiedad.getPropietario().getId())) {
             throw new OperacionInvalidaException("El garante no puede ser el propietario de la propiedad");
         }
-        propiedad.reservar(inquilino, garante);
     }
 
     /**

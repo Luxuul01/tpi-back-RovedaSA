@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -24,6 +25,8 @@ public class SeedPrecioReferenciaZona implements CommandLineRunner {
     private static final String CIUDAD = "Córdoba";
 
     private final PrecioReferenciaZonaRepository precioReferenciaZonaRepository;
+    // Reloj de RelojConfig: la fecha de actualización de las zonas no depende de LocalDate.now() directo
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -34,7 +37,7 @@ public class SeedPrecioReferenciaZona implements CommandLineRunner {
             return;
         }
 
-        LocalDate hoy = LocalDate.now();
+        LocalDate hoy = LocalDate.now(clock);
         // Valores FICTICIOS de referencia para el TPI: no surgen de un relevamiento real del mercado
         List<PrecioReferenciaZona> zonas = List.of(
                 zona("Nueva Córdoba", -31.4245, -64.1870, 1200, 14000, 9, hoy),
