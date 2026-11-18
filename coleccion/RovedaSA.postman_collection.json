@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "f96ab8f5-d4b8-509b-9fcd-3bf7642a5f73",
     "name": "RovedaSA - TPI Backend 2026",
-    "description": "Escenarios de la sección 12 del Alcance y comprobaciones C-01 a C-08.\n\nRequisitos: bases limpias (`docker compose down -v`) y los microservicios con el perfil `demo` (BCRA simulado). Ver README.\n\nEjecución: `npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json`",
+    "description": "Escenarios de la sección 12 del Alcance y comprobaciones C-01 a C-08.\n\nRequisitos: bases limpias (`docker compose down -v`) y los microservicios con el perfil `demo` (BCRA simulado). Ver README.\n\nFechas: casi todas son relativas a hoy (pre-request de la colección). Las fijas dependen del simulador del perfil demo, que usa fechas absolutas: el ICL vale 10,00 antes del 01/08/2026 y 12,50 desde ahí (C-05, I-03: ventana 01/07/2026 -> 01/10/2026 = +25 %) y el IPC de cada mes se publica el día 15 del mes siguiente (A-01: IPC de junio, julio y agosto de 2026); I-04 usa la ventana 01/03 -> 01/06/2026. Para probar otra fecha: arrancar los servicios con `-Dapp.reloj.fecha-fija=AAAA-MM-DD` y correr newman con `--env-var hoyFijo=AAAA-MM-DD` (la misma fecha, posterior al 15/09/2026).\n\nEjecución: `npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json`\n\nGenerada por generar_coleccion.py (no editar el JSON a mano).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -21,16 +21,38 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// ---- Fechas relativas (las fijas de C-05 viven en el environment) ----",
+          "// ---- Fechas relativas en UTC (las fijas de C-05 viven en el environment) ----",
+          "// \"hoy\" es la fecha real, salvo que se pase hoyFijo (yyyy-MM-dd) para correr la colección contra servicios",
+          "// arrancados con app.reloj.fecha-fija en esa misma fecha: newman ... --env-var hoyFijo=2027-03-15",
           "const iso = d => d.toISOString().slice(0, 10);",
-          "const hoy = new Date();",
+          "const hoyFijo = pm.environment.get('hoyFijo');",
+          "const hoy = hoyFijo ? new Date(hoyFijo + 'T12:00:00Z') : new Date();",
           "const mas = (dias) => { const d = new Date(hoy); d.setUTCDate(d.getUTCDate() + dias); return d; };",
-          "const mesesAtras = (m) => { const d = new Date(hoy); d.setUTCMonth(d.getUTCMonth() - m); return d; };",
+          "// Igual que LocalDate.plusMonths de Java: si el día no existe en el mes destino se recorta al último",
+          "const masMeses = (d, m) => {",
+          "  const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m + 1, 0)).getUTCDate();",
+          "  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m, Math.min(d.getUTCDate(), ultimo)));",
+          "};",
           "pm.environment.set('hoy', iso(hoy));",
+          "pm.environment.set('manana', iso(mas(1)));",
           "pm.environment.set('fechaFin', iso(mas(730)));",
           "pm.environment.set('fechaLimiteSenia', iso(mas(10)));",
-          "pm.environment.set('inicioHace4Meses', iso(mesesAtras(4)));",
-          "pm.environment.set('finDesdeHace4Meses', iso(new Date(mesesAtras(4).getTime() + 730 * 86400000)));",
+          "// Primer hito de ajuste de un contrato que empieza hoy con frecuencia 3 (H_1 = inicio + 3 meses)",
+          "pm.environment.set('hito1DesdeHoy', iso(masMeses(hoy, 3)));",
+          "pm.environment.set('inicioHace4Meses', iso(masMeses(hoy, -4)));",
+          "pm.environment.set('finDesdeHace4Meses', iso(new Date(masMeses(hoy, -4).getTime() + 730 * 86400000)));",
+          "pm.environment.set('hoyMas10', iso(mas(10)));",
+          "// Contrato J (ajuste periódico): empieza el primer día del mes, 10 meses atrás, y dura 24 meses (fin = día anterior)",
+          "const inicioJ = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 10, 1));",
+          "pm.environment.set('inicioJ', iso(inicioJ));",
+          "pm.environment.set('finJ', iso(new Date(masMeses(inicioJ, 24).getTime() - 86400000)));",
+          "// Fin de los contratos con inicio fijo 01/07/2026 (D, K, H, IPC, I): 01/07/2028 o 24 meses desde hoy si es más",
+          "// tarde, para que fechaFin siga siendo futura (@Future) cuando la colección se corra después de esa fecha",
+          "const finC05 = iso(masMeses(hoy, 24));",
+          "pm.environment.set('c05Fin', finC05 > '2028-07-01' ? finC05 : '2028-07-01');",
+          "// Período (mes/año) en curso, para verificar que el ajuste periódico generó las cuotas hasta hoy",
+          "pm.environment.set('mesActual', hoy.getUTCMonth() + 1);",
+          "pm.environment.set('anioActual', hoy.getUTCFullYear());",
           "",
           "// ---- Renovación automática de los tokens de los tres usuarios ----",
           "const env = pm.environment;",
@@ -65,7 +87,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// T-01: toda respuesta que pasa por el Gateway trae el X-Correlation-ID (también los 401 y 403)",
+          "// T-01: toda respuesta que pasa por el Gateway trae el X-Correlation-ID (también los 401, 403 y 404 del Gateway)",
           "if (!pm.request.url.toString().includes('openid-connect')) {",
           "  pm.test('Respuesta con X-Correlation-ID', () => pm.expect(pm.response.headers.get('X-Correlation-ID')).to.be.a('string').and.not.empty);",
           "}"
@@ -306,12 +328,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
-                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
                   "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
-                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
-                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
-                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
                   "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
                 ]
               }
@@ -355,12 +382,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
-                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
                   "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
-                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
-                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
-                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
                   "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
                 ]
               }
@@ -404,12 +436,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
-                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
                   "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
-                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
-                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
-                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
                   "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
                 ]
               }
@@ -453,12 +490,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
-                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
                   "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
-                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
-                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
-                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
                   "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
                 ]
               }
@@ -502,12 +544,17 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales",
-                  "const base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
                   "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
-                  "let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
-                  "let v = 11 - (s % 11); if (v === 11) { v = 0; }",
-                  "pm.variables.set('cuitNuevo', v === 10 ? '20888888889' : base + v);",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
                   "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
                 ]
               }
@@ -803,6 +850,74 @@
               }
             }
           ]
+        },
+        {
+          "name": "Crear propiedad independencia 800",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"800\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad9Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear propiedad independencia 700",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipologia\": \"DEPARTAMENTO\",\n  \"calle\": \"independencia\",\n  \"numero\": \"700\",\n  \"barrio\": \"Nueva Córdoba\",\n  \"ciudad\": \"Córdoba\",\n  \"provincia\": \"Córdoba\",\n  \"superficieTotalM2\": 55,\n  \"superficieCubiertaM2\": 50,\n  \"propietarioId\": {{propietarioId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) { pm.environment.set('propiedad10Id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
         }
       ],
       "description": "E-02 personas y E-03 propiedades con GeoRef (C-01)."
@@ -967,7 +1082,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: ya no está DISPONIBLE (estado: RESERVADA)', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('ya no está DISPONIBLE (estado: RESERVADA)')));"
                 ]
               }
             }
@@ -1137,6 +1253,8 @@
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "",
                   "const lista = pm.response.json();",
+                  "pm.test('Ve al menos una propiedad (las de 01 son suyas)', () => pm.expect(lista.length).to.be.above(0));",
+                  "pm.test('Incluye la propiedad del contrato A', () => pm.expect(lista.map(p => p.id)).to.include(Number(pm.environment.get('propiedadId'))));",
                   "pm.test('Solo propiedades de propietario1', () => lista.forEach(p => pm.expect(p.propietarioId).to.eql(Number(pm.environment.get('propietarioId')))));"
                 ]
               }
@@ -1182,6 +1300,11 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Validación de \\'cuitCuil\\': CUIT/CUIL inválido', () => {",
+                  "  const v = pm.response.json().validaciones || {};",
+                  "  pm.expect(v, 'validaciones').to.have.property('cuitCuil');",
+                  "  pm.expect(v['cuitCuil']).to.include(pm.variables.replaceIn('CUIT/CUIL inválido'));",
                   "});"
                 ]
               }
@@ -1221,6 +1344,71 @@
                   "  pm.expect(e.status).to.eql(409);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: Ya existe una persona con ese CUIT/CUIL', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Ya existe una persona con ese CUIT/CUIL')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-01 Persona PROPIETARIO sin keycloakUserId -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuitCuil\": \"{{cuitNuevo}}\",\n  \"nombre\": \"Sin\",\n  \"apellido\": \"Usuario\",\n  \"roles\": [\n    \"PROPIETARIO\"\n  ],\n  \"email\": \"{{emailNuevo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// CUIT válido con DNI del rango 88.0xx.xxx (no asignado): el repo no usa CUITs de personas reales.",
+                  "// Si el dígito verificador da 10 ese DNI no tiene CUIT con prefijo 20: se vuelve a sortear (antes caía",
+                  "// en un CUIT fijo y la corrida fallaba en cascada por 409 una de cada ~25 veces).",
+                  "const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];",
+                  "let base, v;",
+                  "do {",
+                  "  base = '20' + String(88000000 + Math.floor(Math.random() * 700000));",
+                  "  let s = 0; for (let i = 0; i < 10; i++) { s += Number(base[i]) * pesos[i]; }",
+                  "  v = 11 - (s % 11); if (v === 11) { v = 0; }",
+                  "} while (v === 10);",
+                  "pm.variables.set('cuitNuevo', base + v);",
+                  "pm.variables.set('emailNuevo', 'persona' + Date.now() + Math.floor(Math.random() * 1000) + '@test.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Validación de \\'keycloakUserId\\': keycloakUserId es obligatorio para los roles PROPIETARIO e INQUILINO', () => {",
+                  "  const v = pm.response.json().validaciones || {};",
+                  "  pm.expect(v, 'validaciones').to.have.property('keycloakUserId');",
+                  "  pm.expect(v['keycloakUserId']).to.include(pm.variables.replaceIn('keycloakUserId es obligatorio para los roles PROPIETARIO e INQUILINO'));",
                   "});"
                 ]
               }
@@ -1260,7 +1448,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: No se pudo normalizar la dirección', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('No se pudo normalizar la dirección')));"
                 ]
               }
             }
@@ -1299,7 +1488,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Valor inválido \\'JEFE\\'', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Valor inválido \\'JEFE\\'')));"
                 ]
               }
             }
@@ -1338,7 +1528,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: El garante no puede ser el inquilino ni el propietario', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('El garante no puede ser el inquilino ni el propietario')));"
                 ]
               }
             }
@@ -1377,6 +1568,56 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: no está disponible para contratar (estado: ALQUILADA)', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('no está disponible para contratar (estado: ALQUILADA)')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Contrato con montos fuera de rango (montoInicial 1e15, mora 1000 %) -> 400, no 500",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad2Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{hoy}}\",\n  \"fechaFin\": \"{{fechaFin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 1e15,\n  \"porcentajeMoraDiaria\": 1000,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Validación de \\'montoInicial\\': 13 dígitos enteros', () => {",
+                  "  const v = pm.response.json().validaciones || {};",
+                  "  pm.expect(v, 'validaciones').to.have.property('montoInicial');",
+                  "  pm.expect(v['montoInicial']).to.include(pm.variables.replaceIn('13 dígitos enteros'));",
+                  "});",
+                  "pm.test('Validación de \\'porcentajeMoraDiaria\\': no puede superar el 100 %', () => {",
+                  "  const v = pm.response.json().validaciones || {};",
+                  "  pm.expect(v, 'validaciones').to.have.property('porcentajeMoraDiaria');",
+                  "  pm.expect(v['porcentajeMoraDiaria']).to.include(pm.variables.replaceIn('no puede superar el 100 %'));",
                   "});"
                 ]
               }
@@ -1402,6 +1643,34 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: se encuentra en estado CANCELADO', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('se encuentra en estado CANCELADO')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuotas: la primera cuota del contrato A (inicio hoy) no nace vencida",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/cuotas"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const cuotas = pm.response.json();",
+                  "const hoy = pm.environment.get('hoy');",
+                  "pm.test('La primera cuota vence en o después del inicio (hoy)', () => pm.expect(cuotas[0].fechaVencimiento >= hoy).to.be.true);",
+                  "pm.test('Ninguna cuota tiene mora hoy', () => cuotas.forEach(c => pm.expect(Number(c.montoMora)).to.eql(0)));",
+                  "pm.test('Vencimientos en orden y sin repetir', () => {",
+                  "  for (let i = 1; i < cuotas.length; i++) { pm.expect(cuotas[i].fechaVencimiento > cuotas[i - 1].fechaVencimiento).to.be.true; }",
                   "});"
                 ]
               }
@@ -1409,7 +1678,33 @@
           ]
         },
         {
-          "name": "N-08 Ajuste prematuro (no pasaron 3 meses) -> 400",
+          "name": "N-08 Ajuste prematuro sin body (contrato recién activado) -> 400 'corresponde a partir del' primer hito",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/ajustes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: aún no se cumplió el período mínimo de 3 meses (corresponde a partir del {{hito1DesdeHoy}})', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('aún no se cumplió el período mínimo de 3 meses (corresponde a partir del {{hito1DesdeHoy}})')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "N-08 Ajuste prematuro con las fechas del primer hito -> 400 por la regla del período (no por validación de campo)",
           "request": {
             "method": "POST",
             "header": [
@@ -1421,7 +1716,7 @@
             "url": "{{baseUrl}}/api/contratos/{{contratoA}}/ajustes",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaIndiceDesde\": \"{{hoy}}\",\n  \"fechaIndiceHasta\": \"{{hoy}}\"\n}",
+              "raw": "{\n  \"fechaIndiceDesde\": \"{{hoy}}\",\n  \"fechaIndiceHasta\": \"{{hito1DesdeHoy}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1441,7 +1736,10 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: corresponde a partir del {{hito1DesdeHoy}}', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('corresponde a partir del {{hito1DesdeHoy}}')));",
+                  "",
+                  "pm.test('No es un error de validación de campo', () => pm.expect(pm.response.json()).to.not.have.property('validaciones'));"
                 ]
               }
             }
@@ -1466,7 +1764,161 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: antes de su fecha de vencimiento', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('antes de su fecha de vencimiento')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rescisión con fecha posterior al fin del contrato (2030-01-01) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescindir",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaRescision\": \"2030-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: La fecha de rescisión del contrato', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('La fecha de rescisión del contrato')));",
+                  "pm.test('Mensaje: y el {{hoy}} (hoy): no puede ser futura', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('y el {{hoy}} (hoy): no puede ser futura')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rescisión con fecha de mañana -> 400 (no puede ser futura: la rescisión libera la propiedad en el acto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescindir",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaRescision\": \"{{manana}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: no puede ser futura porque la rescisión libera la propiedad en el acto', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('no puede ser futura porque la rescisión libera la propiedad en el acto')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pago con fechaPago futura -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}/pago?fechaPago={{manana}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: no puede ser futura', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('no puede ser futura')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pago con fechaPago anterior al inicio del contrato (1990-01-01) -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaId}}/pago?fechaPago=1990-01-01"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: no puede ser anterior al inicio del contrato ({{hoy}})', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('no puede ser anterior al inicio del contrato ({{hoy}})')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET contrato {{contratoA}} sigue ACTIVO",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
                 ]
               }
             }
@@ -1505,7 +1957,108 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: No se puede pasar de DISPONIBLE a ALQUILADA', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('No se puede pasar de DISPONIBLE a ALQUILADA')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Propiedad: PATCH estado con estadoEsperado equivocado -> 409",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad2Id}}/estado",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nuevoEstado\": \"RESERVADA\",\n  \"estadoEsperado\": \"ALQUILADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(409);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: La propiedad está en estado DISPONIBLE y se esperaba ALQUILADA', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('La propiedad está en estado DISPONIBLE y se esperaba ALQUILADA')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Propiedad: compensación con un par que no deshace una transición válida -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad2Id}}/estado/compensacion",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estadoActual\": \"ALQUILADA\",\n  \"estadoAnterior\": \"DISPONIBLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: no es una transición válida que se pueda deshacer', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('no es una transición válida que se pueda deshacer')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET propiedad {{propiedad2Id}} queda DISPONIBLE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/propiedades/{{propiedad2Id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Propiedad DISPONIBLE', () => pm.expect(pm.response.json().estado).to.eql('DISPONIBLE'));"
                 ]
               }
             }
@@ -1599,7 +2152,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: El garante no es solvente: No califica: situación crediticia 3', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('El garante no es solvente: No califica: situación crediticia 3')));"
                 ]
               }
             }
@@ -1666,7 +2220,7 @@
           ]
         }
       ],
-      "description": "N-01 a N-11 y C-04: validaciones, reglas de estado y garante no solvente."
+      "description": "N-01 a N-11 y C-04: validaciones, reglas de estado y garante no solvente. Cada negativo verifica además un fragmento del message (o del error del campo en 'validaciones') que identifica la regla. Incluye las reglas nuevas: keycloakUserId obligatorio para PROPIETARIO, montos fuera de rango (400, no 500), primera cuota no vencida, período de ajuste (sin body o con el primer hito antes de tiempo), rescisión fuera de rango, fecha de pago futura o anterior al inicio, estadoEsperado (409) y compensación inválida (400)."
     },
     {
       "name": "04 Ciclo posterior",
@@ -1778,7 +2332,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: ya fue pagada', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('ya fue pagada')));"
                 ]
               }
             }
@@ -1868,6 +2423,46 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "C-05 Ajuste con fechas que no coinciden con el hito (ventana de 1 día) -> 400 con las fechas que corresponden",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/ajustes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaIndiceDesde\": \"2026-09-30\",\n  \"fechaIndiceHasta\": \"{{c05Hasta}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(400);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: deben ser desde {{c05Desde}} hasta {{c05Hasta}}', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('deben ser desde {{c05Desde}} hasta {{c05Hasta}}')));"
                 ]
               }
             }
@@ -1987,6 +2582,122 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: Ya existe un ajuste aplicado para el período que termina el {{c05Hasta}}', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Ya existe un ajuste aplicado para el período que termina el {{c05Hasta}}')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste sin body: contrato K con inicio 01/07/2026",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad9Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{c05Desde}}\",\n  \"fechaFin\": \"{{c05Fin}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoK', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoK}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoK}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste sin body usa la ventana del hito (01/07 -> 01/10): canon 625.000",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/ajustes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Canon 625.000', () => pm.expect(c.montoActual).to.eql(625000));",
+                  "pm.test('Ventana del hito 1', () => {",
+                  "  pm.expect(c.ajustes[0].fechaIndiceDesde).to.eql(pm.environment.get('c05Desde'));",
+                  "  pm.expect(c.ajustes[0].fechaIndiceHasta).to.eql(pm.environment.get('c05Hasta'));",
                   "});"
                 ]
               }
@@ -2113,7 +2824,105 @@
                   "",
                   "const c = pm.response.json();",
                   "pm.test('Se ajustó por IPC', () => pm.expect(c.ajustes[0].tipoIndice).to.eql('IPC'));",
-                  "pm.test('Canon 530.604 (500.000 x 1,02³)', () => pm.expect(c.montoActual).to.be.closeTo(530604, 1));"
+                  "pm.test('Canon 530.604 (500.000 x 1,02³)', () => pm.expect(c.montoActual).to.be.closeTo(530604, 1));",
+                  "pm.test('Usa el IPC de junio, julio y agosto (un mes de rezago): 2026-06-30 a 2026-08-31', () => {",
+                  "  pm.expect(c.ajustes[0].fechaValorIndiceDesde).to.eql('2026-06-30');",
+                  "  pm.expect(c.ajustes[0].fechaValorIndiceHasta).to.eql('2026-08-31');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuota emitida tarde (contrato IPC: inicio 01/07, activado hoy): vencida pero sin mora retroactiva",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/cuotas"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json()[0];",
+                  "const hoy = pm.environment.get('hoy');",
+                  "pm.test('La primera cuota está PENDIENTE y venció antes de hoy', () => { pm.expect(c.estado).to.eql('PENDIENTE'); pm.expect(c.fechaVencimiento < hoy).to.be.true; });",
+                  "pm.test('Se emitió hoy (fechaEmision)', () => pm.expect(c.fechaEmision).to.eql(hoy));",
+                  "pm.test('Mora 0 el día de emisión (corre desde max(vencimiento, emisión))', () => pm.expect(Number(c.montoMora)).to.eql(0));",
+                  "pm.environment.set('cuotaAtrasadaId', c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuota emitida tarde: a 10 días de la emisión la mora es 5.000 y el total 505.000",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaAtrasadaId}}?fechaReferencia={{hoyMas10}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Mora 5.000 (0,1 % x 10 días desde la emisión x 500.000)', () => pm.expect(c.montoMora).to.eql(5000));",
+                  "pm.test('Total 505.000', () => pm.expect(c.montoTotal).to.eql(505000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuota emitida tarde pagada hoy -> PAGADA sin mora",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaAtrasadaId}}/pago"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('PAGADA hoy', () => { pm.expect(c.estado).to.eql('PAGADA'); pm.expect(c.fechaPago).to.eql(pm.environment.get('hoy')); });",
+                  "pm.test('Sin mora (se pagó el día en que se emitió)', () => { pm.expect(Number(c.montoMora)).to.eql(0); pm.expect(c.montoTotal).to.eql(500000); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuota pagada: la mora queda fija aunque se consulte más adelante",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/cuotas/{{cuotaAtrasadaId}}?fechaReferencia={{c05Fin}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Sigue en 0', () => pm.expect(Number(c.montoMora)).to.eql(0));"
                 ]
               }
             }
@@ -2318,7 +3127,8 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: se encuentra en estado RESCINDIDO', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('se encuentra en estado RESCINDIDO')));"
                 ]
               }
             }
@@ -2366,14 +3176,15 @@
                   "  pm.expect(e.status).to.eql(400);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: está anulada', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('está anulada')));"
                 ]
               }
             }
           ]
         }
       ],
-      "description": "E-08 a E-11 y C-05 a C-07: mora, pago, ajuste por ICL (y el adicional por IPC) y rescisión."
+      "description": "E-08 a E-11 y C-05 a C-07: mora, pago, ajuste por ICL (con y sin fechas en el body, y fechas que no coinciden con el hito), el adicional por IPC, cuota emitida tarde (sin mora retroactiva: corre desde la emisión) y rescisión. El pago fuera de término con mora fija (RN-18) se prueba en los tests unitarios: con el reloj real toda cuota vencida hace más de 10 días se emitió hoy y no puede tener mora a una fecha de pago no futura."
     },
     {
       "name": "05 Seguridad",
@@ -2400,7 +3211,8 @@
                   "  pm.expect(e.status).to.eql(401);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Se requiere un token válido', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Se requiere un token válido')));"
                 ]
               }
             }
@@ -2433,7 +3245,8 @@
                   "  pm.expect(e.status).to.eql(401);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Se requiere un token válido', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Se requiere un token válido')));"
                 ]
               }
             }
@@ -2482,7 +3295,8 @@
                   "  pm.expect(e.status).to.eql(403);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: El rol del usuario no tiene permiso', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('El rol del usuario no tiene permiso')));"
                 ]
               }
             }
@@ -2517,7 +3331,8 @@
                   "  pm.expect(e.status).to.eql(403);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: No tenés permisos', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('No tenés permisos')));"
                 ]
               }
             }
@@ -2552,7 +3367,8 @@
                   "  pm.expect(e.status).to.eql(404);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Contrato con ID {{contratoB}} no fue encontrado', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Contrato con ID {{contratoB}} no fue encontrado')));"
                 ]
               }
             }
@@ -2587,14 +3403,77 @@
                   "  pm.expect(e.status).to.eql(404);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Contrato con ID {{contratoB}} no fue encontrado', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Contrato con ID {{contratoB}} no fue encontrado')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway: ruta inexistente (GET /api/no-existe) -> 404 ApiError",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/no-existe"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(404);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: No existe ningún recurso para GET /api/no-existe', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('No existe ningún recurso para GET /api/no-existe')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gateway: actuator /actuator/loggers con inquilino1 -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/loggers",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenInquilino}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(403);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mensaje: El rol del usuario no tiene permiso', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('El rol del usuario no tiene permiso')));"
                 ]
               }
             }
           ]
         }
       ],
-      "description": "S-01 a S-04 y C-08: 401, 403 en el Gateway, 403 en el servicio y 404 ante recurso ajeno, siempre con ApiError."
+      "description": "S-01 a S-04 y C-08: 401, 403 en el Gateway, 403 en el servicio y 404 ante recurso ajeno, siempre con ApiError. También la ruta inexistente del Gateway (404 ApiError) y el actuator protegido (403 sin ADMINISTRADOR)."
     },
     {
       "name": "06 Integraciones y contingencia",
@@ -2652,7 +3531,8 @@
                   "  pm.expect(e.status).to.eql(503);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: GeoRef', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('GeoRef')));"
                 ]
               }
             }
@@ -2786,7 +3666,8 @@
                   "  pm.expect(e.status).to.eql(503);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: Central de Deudores', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('Central de Deudores')));"
                 ]
               }
             }
@@ -2847,6 +3728,27 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "I-03 Con el BCRA arriba se consulta el ICL 01/07 -> 01/10 (queda en el caché)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/indices/ICL/coeficiente?desde={{c05Desde}}&hasta={{c05Hasta}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Coeficiente 1,25 desde el BCRA', () => pm.expect(pm.response.json().coeficiente).to.eql(1.25));"
                 ]
               }
             }
@@ -3120,14 +4022,15 @@
                   "  pm.expect(e.status).to.eql(503);",
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
-                  "});"
+                  "});",
+                  "pm.test('Mensaje: el ajuste queda pendiente', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('el ajuste queda pendiente')));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "GET contrato {{contratoI}} sigue ACTIVO",
+          "name": "I-04 El contrato I sigue ACTIVO, con el mismo canon y sin ajustes registrados",
           "request": {
             "method": "GET",
             "header": [],
@@ -3140,7 +4043,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Estado ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('ACTIVO', () => pm.expect(c.estado).to.eql('ACTIVO'));",
+                  "pm.test('Canon sigue en 500.000', () => pm.expect(c.montoActual).to.eql(500000));",
+                  "pm.test('No se registró ningún ajuste', () => pm.expect(c.ajustes.length).to.eql(0));",
+                  "pm.test('Solo las 3 cuotas del tramo inicial', () => pm.expect(c.cuotas.length).to.eql(3));"
                 ]
               }
             }
@@ -3161,6 +4069,242 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Perfil demo activo', () => pm.expect(pm.response.json()).to.have.property('bcraCaido'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste periódico: contrato J con inicio hace 10 meses (tres hitos ya cumplidos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propiedadId\": {{propiedad10Id}},\n  \"propietarioId\": {{propietarioId}},\n  \"inquilinoId\": {{inquilinoId}},\n  \"garanteId\": {{garanteId}},\n  \"fechaInicio\": \"{{inicioJ}}\",\n  \"fechaFin\": \"{{finJ}}\",\n  \"frecuenciaAjusteMeses\": 3,\n  \"montoInicial\": 500000,\n  \"porcentajeMoraDiaria\": 0.1,\n  \"diaVencimientoMes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Queda CREADO', () => pm.expect(pm.response.json().estado).to.eql('CREADO'));",
+                  "if (pm.response.code < 300) { pm.environment.set('contratoJ', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Señar contrato {{contratoJ}}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/seniar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda SENIADO', () => pm.expect(pm.response.json().estado).to.eql('SENIADO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activar contrato {{contratoJ}}",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/activar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Queda ACTIVO', () => pm.expect(pm.response.json().estado).to.eql('ACTIVO'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste periódico: POST /api/contratos/ajuste-periodico pone al día los contratos ACTIVOS",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/ajuste-periodico"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const esperado = (() => {",
+                  "  const d = s => new Date(s + 'T00:00:00Z');",
+                  "  const iso = x => x.toISOString().slice(0, 10);",
+                  "  const masMeses = (x, m) => {",
+                  "    const ultimo = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + m + 1, 0)).getUTCDate();",
+                  "    return new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + m, Math.min(x.getUTCDate(), ultimo)));",
+                  "  };",
+                  "  const inicio = d(pm.environment.get('inicioJ')), fin = pm.environment.get('finJ'), hoy = pm.environment.get('hoy');",
+                  "  const f = 3;",
+                  "  const hito = k => iso(masMeses(inicio, k * f));",
+                  "  const icl = fecha => fecha < '2026-08-01' ? 10 : 12.5;",
+                  "  let n = 0;",
+                  "  while (hito(n + 1) <= hoy && hito(n + 1) < fin) { n++; }",
+                  "  let totalMeses = 0;",
+                  "  while (iso(masMeses(inicio, totalMeses)) < fin) { totalMeses++; }",
+                  "  const ventanas = [];",
+                  "  let canon = 500000;",
+                  "  for (let k = 1; k <= n; k++) {",
+                  "    ventanas.push(hito(k - 1) + '>' + hito(k));",
+                  "    canon = Math.round(canon * icl(hito(k)) / icl(hito(k - 1)) * 100) / 100;",
+                  "  }",
+                  "  const periodos = [];",
+                  "  for (let i = 0; i < Math.min((n + 1) * f, totalMeses); i++) {",
+                  "    const p = masMeses(inicio, i);",
+                  "    periodos.push(p.getUTCFullYear() + '-' + (p.getUTCMonth() + 1));",
+                  "  }",
+                  "  return { ventanas, canon, periodos };",
+                  "})();",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Resumen {contratosRevisados, ajustesAplicados, pendientes}', () => {",
+                  "  pm.expect(r.contratosRevisados).to.be.a('number').and.above(0);",
+                  "  pm.expect(r.ajustesAplicados).to.be.a('number');",
+                  "  pm.expect(r.pendientes).to.be.an('array');",
+                  "});",
+                  "pm.test('Aplicó al menos los ' + esperado.ventanas.length + ' ajustes atrasados del contrato J', () =>",
+                  "  pm.expect(r.ajustesAplicados).to.be.at.least(esperado.ventanas.length));",
+                  "pm.test('El contrato J no quedó pendiente', () =>",
+                  "  pm.expect(r.pendientes.map(p => p.contratoId)).to.not.include(Number(pm.environment.get('contratoJ'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste periódico: el contrato J quedó al día (una ventana por hito H_k <= hoy y < fin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const esperado = (() => {",
+                  "  const d = s => new Date(s + 'T00:00:00Z');",
+                  "  const iso = x => x.toISOString().slice(0, 10);",
+                  "  const masMeses = (x, m) => {",
+                  "    const ultimo = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + m + 1, 0)).getUTCDate();",
+                  "    return new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + m, Math.min(x.getUTCDate(), ultimo)));",
+                  "  };",
+                  "  const inicio = d(pm.environment.get('inicioJ')), fin = pm.environment.get('finJ'), hoy = pm.environment.get('hoy');",
+                  "  const f = 3;",
+                  "  const hito = k => iso(masMeses(inicio, k * f));",
+                  "  const icl = fecha => fecha < '2026-08-01' ? 10 : 12.5;",
+                  "  let n = 0;",
+                  "  while (hito(n + 1) <= hoy && hito(n + 1) < fin) { n++; }",
+                  "  let totalMeses = 0;",
+                  "  while (iso(masMeses(inicio, totalMeses)) < fin) { totalMeses++; }",
+                  "  const ventanas = [];",
+                  "  let canon = 500000;",
+                  "  for (let k = 1; k <= n; k++) {",
+                  "    ventanas.push(hito(k - 1) + '>' + hito(k));",
+                  "    canon = Math.round(canon * icl(hito(k)) / icl(hito(k - 1)) * 100) / 100;",
+                  "  }",
+                  "  const periodos = [];",
+                  "  for (let i = 0; i < Math.min((n + 1) * f, totalMeses); i++) {",
+                  "    const p = masMeses(inicio, i);",
+                  "    periodos.push(p.getUTCFullYear() + '-' + (p.getUTCMonth() + 1));",
+                  "  }",
+                  "  return { ventanas, canon, periodos };",
+                  "})();",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Ajustes con las ventanas de los hitos cumplidos (' + esperado.ventanas.length + ')', () => {",
+                  "  pm.expect(c.ajustes.map(a => a.fechaIndiceDesde + '>' + a.fechaIndiceHasta)).to.eql(esperado.ventanas);",
+                  "});",
+                  "pm.test('Canon ' + esperado.canon + ' (ICL simulado: 10,00 hasta el 01/08/2026 y 12,50 desde ahí)', () =>",
+                  "  pm.expect(c.montoActual).to.eql(esperado.canon));",
+                  "pm.test(esperado.periodos.length + ' cuotas: una por mes desde el inicio, hasta el fin del tramo vigente', () => {",
+                  "  pm.expect(c.cuotas.length).to.eql(esperado.periodos.length);",
+                  "  pm.expect(c.cuotas.map(q => q.periodoAnio + '-' + q.periodoMes)).to.eql(esperado.periodos);",
+                  "});",
+                  "pm.test('Incluye la cuota del período actual', () => pm.expect(c.cuotas.some(q =>",
+                  "  q.periodoMes === Number(pm.environment.get('mesActual')) && q.periodoAnio === Number(pm.environment.get('anioActual')))).to.be.true);",
+                  "pm.test('Las cuotas se emitieron hoy (sin mora retroactiva)', () => c.cuotas.forEach(q => {",
+                  "  pm.expect(q.fechaEmision).to.eql(pm.environment.get('hoy'));",
+                  "  pm.expect(Number(q.montoMora)).to.eql(0);",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajuste periódico: una segunda corrida no aplica nada (ya está todo al día)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/contratos/ajuste-periodico"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('0 ajustes aplicados', () => pm.expect(r.ajustesAplicados).to.eql(0));",
+                  "pm.test('Sin pendientes', () => pm.expect(r.pendientes.length).to.eql(0));"
                 ]
               }
             }
@@ -3191,6 +4335,7 @@
                   "  pm.expect(e).to.have.property('message');",
                   "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
                   "});",
+                  "pm.test('Mensaje: No existe la persona con ID 999999', () => pm.expect(pm.response.json().message).to.include(pm.variables.replaceIn('No existe la persona con ID 999999')));",
                   "",
                   "pm.test('Header igual al enviado', () => pm.expect(pm.response.headers.get('X-Correlation-ID')).to.eql('coleccion-t01'));",
                   "pm.test('correlationId del ApiError igual al enviado', () => pm.expect(pm.response.json().correlationId).to.eql('coleccion-t01'));"
@@ -3198,9 +4343,72 @@
               }
             }
           ]
+        },
+        {
+          "name": "T-01 El X-Correlation-ID llega una sola vez en la respuesta",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-ID",
+                "value": "coleccion-t01-unico"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas/{{propietarioId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const valores = pm.response.headers.all().filter(h => h.key.toLowerCase() === 'x-correlation-id');",
+                  "pm.test('X-Correlation-ID aparece una sola vez', () => pm.expect(valores.length).to.eql(1));",
+                  "pm.test('Es el enviado', () => pm.expect(valores[0].value).to.eql('coleccion-t01-unico'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "T-01 Un X-Correlation-ID inválido (con <script>) se reemplaza por uno generado",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-ID",
+                "value": "<script>alert(1)</script>"
+              }
+            ],
+            "url": "{{baseUrl}}/api/personas/999999"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error con formato ApiError y correlationId', () => {",
+                  "  const e = pm.response.json();",
+                  "  pm.expect(e.status).to.eql(404);",
+                  "  pm.expect(e).to.have.property('message');",
+                  "  pm.expect(e.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "const recibido = pm.response.headers.get('X-Correlation-ID');",
+                  "pm.test('No devuelve el valor inválido', () => { pm.expect(recibido).to.not.include('<'); pm.expect(recibido).to.not.include('script'); });",
+                  "pm.test('Lo reemplaza por uno generado', () => pm.expect(recibido).to.match(/^req-[0-9a-f-]{36}$/));",
+                  "pm.test('El ApiError trae el mismo id generado', () => pm.expect(pm.response.json().correlationId).to.eql(recibido));"
+                ]
+              }
+            }
+          ]
         }
       ],
-      "description": "I-01 a I-04 y T-01: caídas simuladas con el perfil demo (GeoRef, Central de Deudores, Estadísticas) y trazabilidad."
+      "description": "I-01 a I-04 y T-01: caídas simuladas con el perfil demo (GeoRef, Central de Deudores, Estadísticas), ajuste periódico y trazabilidad. Depende solo de 00 y 01 (tokens, personas y propiedades): el caché del ICL que usa I-03 lo carga la propia carpeta con la consulta del coeficiente antes de simular la caída, así no hace falta haber corrido la 04. El ajuste periódico va al final porque recorre todos los contratos ACTIVOS (pone al día también al contrato I de I-04 una vez que el BCRA vuelve, y a los de inicio 01/07/2026 cuando ya pasó su segundo hito): por eso solo se verifica en detalle el contrato J, cuyas fechas son relativas a hoy y cuyo resultado esperado se calcula en el test a partir de esas fechas."
     }
   ]
 }
