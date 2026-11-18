@@ -30,7 +30,7 @@
 ├───────────────────────────────────┴────────────────────────────────────┤
 │ DEV 4: Integración BCRA, Resiliencia ICL y QA/Demo (Postman/E2E)       │
 ├────────────────────────────────────────────────────────────────────────┤
-│ DEV 5: ms-contratos junto a DEV 3 (división de tareas a definir)       │
+│ DEV 5: ms-contratos junto a DEV 3 (servicios, endpoints, CatalogoClient)│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,12 +42,12 @@
   * `api-gateway`: Servicio Spring Cloud Gateway (Java 21 / Netty).
   * `inmobiliaria-commons`: Estructura inicial del JAR reutilizable.
 * **Entregables y Tareas Técnicas:**
-  * Configurar `docker-compose.yml` orquestando las 2 instancias de PostgreSQL (`db_catalogo`, `db_contratos`), Keycloak 24+ y redes virtuales Docker.
+  * Configurar `docker-compose.yml` orquestando las 2 instancias de PostgreSQL (servicios `db-catalogo` y `db-contratos`, bases `catalogo_db` y `contratos_db`), Keycloak 24+ y redes virtuales Docker.
   * Diseñar y exportar el Realm de Keycloak (`realm-export.json`) con los roles de cátedra (`ADMINISTRADOR`, `PROPIETARIO`, `INQUILINO`), clientes OIDC (`spring-gateway`, `backend-services`) y credenciales de prueba.
   * Programar el **API Gateway**:
     * Filtro de seguridad perimetral: validación de firma criptográfica de tokens JWT contra el endpoint JWKS de Keycloak.
     * Control estricto de métodos HTTP (`POST`, `PUT`, `PATCH`, `DELETE` exclusivos de `ADMINISTRADOR`; `GET` autorizado a `PROPIETARIO` e `INQUILINO`).
-    * Inyección de headers transversales: `TokenRelay` hacia servicios internos y filtro `X-Correlation-ID` para observabilidad.
+    * Headers transversales: el `Authorization` del cliente pasa tal cual a los servicios (no hay filtro `TokenRelay`) y el filtro `X-Correlation-ID` agrega la traza para observabilidad.
     * Manejo de CORS para clientes web.
   * Inicializar el artefacto `inmobiliaria-commons` con la clase unificada de excepciones `ApiError` y el `@ControllerAdvice` global base.
 * **Tema para su Defensa Oral:** Arquitectura de red en contenedores, seguridad perimetral en Spring Cloud Gateway, flujo OAuth2/OIDC con Keycloak y desacoplamiento de infraestructura.
@@ -59,7 +59,7 @@
 
 * **Módulos bajo su responsabilidad:**
   * Microservicio `ms-catalogo-inmobiliario`.
-  * Base de datos `db_catalogo` (PostgreSQL).
+  * Base de datos `catalogo_db` (PostgreSQL, servicio `db-catalogo`).
 * **Entregables y Tareas Técnicas:**
   * Persistencia JPA: Diseñar y mapear las entidades `Propiedad`, `Persona` (tipos: `PROPIETARIO`, `INQUILINO`, `GARANTE`) y enum `EstadoPropiedad` (`DISPONIBLE`, `RESERVADA`, `ALQUILADA`, `INACTIVA`).
   * Integración con la **API Pública GeoRef AR**:
@@ -84,7 +84,7 @@
 
 * **Módulos bajo su responsabilidad:**
   * Microservicio `ms-contratos`.
-  * Base de datos `db_contratos` (PostgreSQL).
+  * Base de datos `contratos_db` (PostgreSQL, servicio `db-contratos`).
 * **Entregables y Tareas Técnicas:**
   * Persistencia JPA: Diseñar y mapear las entidades `Contrato`, `Ajuste` y enum `EstadoContratoEnum` (`CREADO`, `SENIADO`, `ACTIVO`, `CANCELADO`, `RESCINDIDO`, `FINALIZADO`).
   * Implementación rigurosa del **Patrón de Diseño State**:
@@ -102,7 +102,7 @@
     * `POST /api/contratos/{id}/rescindir` y `/finalizar`.
     * `GET /api/contratos` (listado único filtrado según el rol: todos para `ADMINISTRADOR`, los de sus propiedades para `PROPIETARIO` y los propios para `INQUILINO`, siempre por el `sub` del token).
     * `GET /api/contratos/{id}` (404 si el recurso es ajeno).
-  * Coordinación con el Integrante 5: la división de tareas dentro de `ms-contratos` está a definir. Ver [Alcance §15](./Alcance.md#15-pendientes-para-cumplir-el-alcance).
+  * Coordinación con el Integrante 5: el Integrante 3 hizo las entidades JPA, el patrón State, la seguridad base y el test de integración; el Integrante 5, la capa de servicio, los endpoints REST, `CatalogoClient`, los DTOs y el `Clock` (PR #15). Ver [Estado del proyecto](./EstadoDelProyecto.md).
 * **Tema para su Defensa Oral:** Implementación del patrón State en JPA, transaccionalidad inter-servicio y reglas de negocio del ciclo de vida contractual.
 
 ---
@@ -112,7 +112,7 @@
 
 * **Módulos bajo su responsabilidad:**
   * Clientes de integración externa con BCRA (compartidos/distribuidos entre Catálogo y Contratos).
-  * Módulo de resiliencia y caché local de índices (`IndiceIclCache`).
+  * Módulo de resiliencia y caché local de índices (`IndiceCache`, tabla `indices_cache`, ICL e IPC).
   * Suite de pruebas funcionales y automatización de la Demo (Postman / Bruno).
 * **Entregables y Tareas Técnicas:**
   * Integración con **API Pública BCRA — Central de Deudores**:
@@ -121,11 +121,12 @@
   * Integración con **API Pública BCRA — Principales Variables (ICL)**:
     * Cliente `RestClient` para obtener el valor oficial diario del Índice de Contratos de Locación.
     * Lógica matemática de ajuste: $\text{Canon Nuevo} = \text{Canon Anterior} \times (\text{ICL}_{\text{hasta}} / \text{ICL}_{\text{desde}})$.
-    * **Mecanismo de Resiliencia y Contingencia**: Persistencia en tabla `IndiceIclCache` y fallback automático ante indisponibilidad, cuotas agotadas o caídas del servicio del BCRA.
+    * **Mecanismo de Resiliencia y Contingencia**: Persistencia en la tabla `indices_cache` y fallback automático ante indisponibilidad, cuotas agotadas o caídas del servicio del BCRA.
   * Proceso masivo de indexación temporal: endpoint o scheduler para detectar contratos a aumentar y asentar los registros de `Ajuste`.
   * **Dueño de la Calidad y la Demo (QA Lead)**:
     * Colección completa y documentada en **Postman o Bruno** con variables de entorno (`baseUrl`, `tokenAdmin`, `tokenInquilino`, `tokenPropietario`), scripts de tests automáticos (`pm.test`) y flujo continuo de punta a punta.
     * Verificación de especificaciones OpenAPI / Swagger UI en cada microservicio.
+  * **Agregados posteriores al Alcance original:** índice **IPC** (variable 27) como alternativa al ICL pactable por contrato, y perfil **`demo`** que simula el BCRA (y sus caídas) para la defensa. La colección quedó en [`/coleccion`](../coleccion/) con las carpetas 00 a 06.
 * **Tema para su Defensa Oral:** Estrategia de resiliencia ante contingencias de APIs externas (BCRA), cálculo del índice ICL y orquestación de la demostración en vivo.
 
 ---
@@ -136,8 +137,12 @@
 * **Módulos bajo su responsabilidad:**
   * Microservicio `ms-contratos`, compartido con el Integrante 3.
 * **Entregables y Tareas Técnicas:**
-  * **A definir con el Integrante 3.** Pendientes de `ms-contratos` a repartir: cuotas (generación, mora, registro de pago y anulación), consultas filtradas por rol, `Clock` inyectable, compensación ante fallas en la llamada al catálogo y copia de los `keycloakUserId` en el contrato. Detalle en [Alcance §15](./Alcance.md#15-pendientes-para-cumplir-el-alcance).
-* **Tema para su Defensa Oral:** A definir según la división de tareas.
+  * **División final:** el Integrante 3 hizo las entidades JPA, el patrón State, la seguridad base y el test de integración; el Integrante 5 hizo la capa de servicio y la API de `ms-contratos` (integrado en el PR #15):
+    * `ContratoService` y `CuotaService` (orquestación del ciclo de vida, cuotas, mora y registro de pago).
+    * `ContratoController` y `CuotaController` (endpoints REST con filtro por rol y 404 ante recursos ajenos).
+    * `CatalogoClient` (llamadas al catálogo), `ClockConfig` (`Clock` inyectable) y los DTOs de request y response.
+    * Copia de los `keycloakUserId` de las partes en el contrato.
+* **Tema para su Defensa Oral:** API REST de contratos y su integración con el catálogo (`CatalogoClient`, Saga con compensación, `Clock` inyectable).
 
 ---
 
@@ -160,7 +165,7 @@ flowchart TD
 
     subgraph F3["Fase 3: Integración, Pruebas y Cierre (Días 6 y 7)"]
         C1["Enlace inter-servicio (Contratos -> Catálogo)"]
-        C2["Enrutamiento final vía Gateway con TokenRelay"]
+        C2["Enrutamiento final vía Gateway (Authorization tal cual + X-Correlation-ID)"]
         C3["Dev 4: Ejecución suite Postman E2E completa"]
         C4["Simulacro de Coloquio / Defensa Oral en Equipo"]
     end
@@ -373,7 +378,23 @@ Para mantener una observabilidad profesional y consistente en todos los microser
 
 ---
 
-## 5. Documentos Relacionados
+## 5. Estado de Avance (al 18/11/2026)
+
+El plan se cumplió: todo está integrado en `develop` (el último PR es el #17) y el CI corre los 645 tests en verde. El detalle de lo que está hecho por módulo, cómo se verificó, las decisiones que difieren del Alcance entregado y lo que queda pendiente está en **[Estado del proyecto](./EstadoDelProyecto.md)**.
+
+| Integrante | Lo entregado |
+| :--- | :--- |
+| **Dev 1** — Luciano Agüero | Gateway (ruteo, seguridad por rol, CORS, Swagger unificado), realm de Keycloak, Docker Compose con observabilidad (Loki, Promtail, Grafana), `inmobiliaria-commons`, CI y arreglos de integración en contratos. |
+| **Dev 2** — Levi Angelino | `ms-catalogo-inmobiliario` completo: personas y roles, propiedades con GeoRef y tasación por zona, estados de ocupación, filtro del propietario y evaluación de solvencia del garante. |
+| **Dev 3** — Santino Brenna | Entidades JPA de contratos, patrón State con sus transiciones y tests, seguridad base y test de integración JPA. |
+| **Dev 4** — Lautaro Roveda | Clientes BCRA (Central de Deudores y Estadísticas), caché de índices con contingencia, IPC, perfil `demo`, colección Postman/Newman y la auditoría integral con sus arreglos (PR #17). |
+| **Dev 5** — Esteban | Capa de servicio y API REST de contratos: `ContratoService`, `CuotaService`, controladores, `CatalogoClient`, DTOs y `Clock`. |
+
+---
+
+## 6. Documentos Relacionados
+
+* Estado del proyecto, verificación y pendientes: [Estado del proyecto](./EstadoDelProyecto.md)
 
 * Alcance comprometido con la cátedra (fuente de verdad): [Alcance](./Alcance.md)
 * Especificación del Negocio y Casos de Uso: [[Dominio]]

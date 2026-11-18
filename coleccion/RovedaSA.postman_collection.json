@@ -572,7 +572,7 @@
           ]
         },
         {
-          "name": "C-01 Crear propiedad con dirección informal (GeoRef + tasación)",
+          "name": "E-03 / C-01 Crear propiedad con dirección informal (GeoRef + tasación)",
           "request": {
             "method": "POST",
             "header": [
@@ -996,7 +996,7 @@
           ]
         },
         {
-          "name": "Señar contrato {{contratoA}}",
+          "name": "E-05 Señar contrato A -> SENIADO (la propiedad se verifica en el request siguiente)",
           "request": {
             "method": "POST",
             "header": [
@@ -1110,7 +1110,7 @@
           ]
         },
         {
-          "name": "C-03 Activar contrato A (garante solvente)",
+          "name": "E-06 / C-03 Activar contrato A (garante solvente)",
           "request": {
             "method": "POST",
             "header": [],

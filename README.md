@@ -15,6 +15,7 @@ Toda la documentación teórica, de negocio, diseño y organización del equipo 
 * 🔁 **[Proceso Principal](./docs/ProcesoPrincipal.md)**: Formalización de un contrato de punta a punta (P1 a P7) a través del Gateway, con la Saga de compensación sobre el estado de la propiedad.
 * 🏦 **[Integración con el BCRA y Resiliencia](./docs/BCRA-Resiliencia.md)**: Clientes de la Central de Deudores y de Estadísticas (ICL/IPC), timeouts, caché de índices y comportamiento ante caídas (503).
 * 🔐 **[Configuración de Keycloak](./docs/ConfiguracionKeycloak.md)**: Realm, usuarios de prueba, clientes OIDC (incluida la cuenta de servicio `backend-services`) y cómo obtener tokens.
+* ✅ **[Estado del Proyecto](./docs/EstadoDelProyecto.md)**: Qué está hecho (F-01 a F-17 y transversales), cómo se verificó (tests, Newman, BCRA real), decisiones que difieren del Alcance entregado y pendientes.
 * 👥 **[Plan de Trabajo y Flujos de GitHub](./docs/PlanDeTrabajo.md)**: Matriz de responsabilidades de los 5 integrantes, temas de defensa oral, pautas de trabajo en Git (ramas, Commons First, PRs con Squash) y guía de resolución de emergencias.
 
 ---
@@ -49,7 +50,7 @@ El sistema se compone de una arquitectura desacoplada en microservicios, punto d
                    └────────────────────────┘   └────────────────────────┘
 ```
 
-* **`api-gateway` (Puerto 8080)**: Enrutamiento perimetral (`/api/propiedades/**`, `/api/personas/**`, `/api/contratos/**`, `/api/cuotas/**`, `/api/indices/**`), validación de firma criptográfica JWT contra Keycloak (JWKS), bloqueo de `POST`/`PUT`/`PATCH`/`DELETE` para roles que no son `ADMINISTRADOR`, encabezado `X-Correlation-ID`, **CORS global** y **Swagger UI unificado** en `http://localhost:8080/swagger-ui.html`. El header `Authorization` del cliente pasa tal cual al microservicio (no hay un filtro `TokenRelay`: el Gateway es Resource Server, no cliente OAuth2), y cada servicio vuelve a validar el token. Sus propios errores salen con el mismo `ApiError` que los servicios: 401 (con `WWW-Authenticate: Bearer`), 403, 404 (ruta inexistente), 503 (servicio caído) y 504 (timeout de 20 s).
+* **`api-gateway` (Puerto 8080)**: Enrutamiento perimetral (`/api/propiedades/**`, `/api/personas/**`, `/api/contratos/**`, `/api/cuotas/**`, `/api/indices/**`), validación de firma criptográfica JWT contra Keycloak (JWKS), bloqueo de `POST`/`PUT`/`PATCH`/`DELETE` para roles que no son `ADMINISTRADOR`, encabezado `X-Correlation-ID`, **CORS global** y **Swagger UI unificado** en `http://localhost:8080/swagger-ui.html`. El header `Authorization` del cliente pasa tal cual al microservicio (no hay un filtro `TokenRelay`: el Gateway es Resource Server, no cliente OAuth2), y cada servicio vuelve a validar el token. Sus propios errores salen con el mismo `ApiError` que los servicios: 401 (con `WWW-Authenticate: Bearer`), 403, 404 (ruta inexistente), 502 (el servicio cortó la conexión sin responder), 503 (servicio caído, o Keycloak sin responder al validar el token) y 504 (timeout de 20 s). Cada línea de log de esos errores lleva `correlationId=...` en el texto, para buscarla en Grafana.
 * **`ms-catalogo-inmobiliario` (Puerto 8081)**: Gestión de inmuebles, cálculo de valor de mercado por $m^2$ e integración con GeoRef AR. Base de datos `catalogo_db` (contenedor `db-catalogo`, PostgreSQL publicado en el puerto 5432 del host).
 * **`ms-contratos` (Puerto 8082)**: Gestión del ciclo de vida contractual con **Patrón State** (`Creado`, `Señado`, `Activo`, `Cancelado`, `Rescindido`, `Finalizado`), indexación por ICL y resiliencia. Base de datos `contratos_db` (contenedor `db-contratos`, PostgreSQL publicado en el puerto 5433 del host). Llama al catálogo con el **token de la cuenta de servicio** `backend-services` (client credentials contra Keycloak, cacheado hasta poco antes de vencer), no con el token del usuario.
 * **`inmobiliaria-commons`**: Artefacto Maven compartido con DTOs de comunicación inter-servicio, enums, `X-Correlation-ID` y manejo unificado de excepciones (`ApiError`).
@@ -66,7 +67,7 @@ Los puertos son los publicados en el host por defecto; todos se pueden cambiar (
 | **Dev 2** — Levi Angelino | **Catálogo Inmobiliario** | Módulo `ms-catalogo-inmobiliario`, base `catalogo_db`, integración con GeoRef AR y filtro por rol Propietario. |
 | **Dev 3** — Santino Brenna | **Contratos & Patrón State** | Módulo `ms-contratos`, base `contratos_db`, implementación del Patrón State y orquestación de señas y alquileres. |
 | **Dev 4** — Lautaro Roveda | **BCRA, ICL & QA/Demo** | Clientes BCRA (Central de Deudores e ICL), resiliencia local `IndiceCache`, ajuste periódico y suite E2E en Postman. |
-| **Dev 5** — Esteban | **Contratos (junto a Dev 3)** | Módulo `ms-contratos`. La división de tareas con Dev 3 está a definir (ver [Alcance §15](./docs/Alcance.md#15-pendientes-para-cumplir-el-alcance)). |
+| **Dev 5** — Esteban | **Contratos (junto a Dev 3)** | Capa de servicio y API REST de `ms-contratos`: `ContratoService`, `CuotaService` (cuotas, mora y pagos), controladores, `CatalogoClient`, DTOs y `Clock`. |
 
 ---
 
@@ -145,6 +146,7 @@ Todas son opcionales. `docker-compose.yml` usa `${VARIABLE:-valor_demo}`, así q
 
 Notas:
 * En el perfil `docker` las contraseñas y el secreto **no tienen valor por defecto en el código**: los pasa el compose. En el perfil por defecto (servicios corriendo en el host) las contraseñas de las bases conservan el valor de demo como default para que `spring-boot:run` arranque sin configurar nada; el secreto del cliente no (ver el paso 3 de la Opción 2).
+* **Zona horaria.** "Hoy" (mora, límite de la seña, ajustes) sale del reloj del sistema. Las imágenes de Java corren en UTC, así que el compose les pone `TZ: America/Argentina/Cordoba`; si no, entre las 21 y las 24 h de Argentina el servicio ya estaría en el día siguiente. Si corrés un servicio con `java -jar` en una máquina con otra zona, agregá `-Duser.timezone=America/Argentina/Cordoba`.
 * PostgreSQL toma la contraseña solo al crear el volumen: para cambiarla en una base ya creada, `docker compose down -v`.
 * Si cambiás `KEYCLOAK_PORT`, los tokens se piden en `http://localhost:<puerto>/realms/rovedasa-realm/protocol/openid-connect/token` y hay que actualizar `keycloakUrl` en `coleccion/local.postman_environment.json`.
 
@@ -205,6 +207,10 @@ PERFIL_SERVICIOS=docker,demo docker compose up -d --build
 # PowerShell
 $env:PERFIL_SERVICIOS="docker,demo"; docker compose up -d --build
 ```
+En PowerShell la variable queda puesta en toda la sesión: un `docker compose up` posterior en esa misma terminal vuelve a levantar el perfil `demo`. Para volver al perfil normal, borrala antes:
+```powershell
+Remove-Item Env:PERFIL_SERVICIOS
+```
 Sin Docker para los servicios Java: `./mvnw -pl ms-catalogo-inmobiliario spring-boot:run -Dspring-boot.run.profiles=demo` (igual para `ms-contratos`).
 
 ### Colección Postman (`/coleccion`)
@@ -221,7 +227,14 @@ npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.pos
 
 Para probar la colección como si fuera otro día, los servicios aceptan la propiedad `app.reloj.fecha-fija` (solo para pruebas; sin ella se usa el reloj del sistema) y la colección la variable `hoyFijo`, con la misma fecha:
 ```bash
-java -Dapp.reloj.fecha-fija=2027-03-15 -Dspring.profiles.active=demo -jar ms-contratos/target/ms-contratos-1.0.0-SNAPSHOT.jar   # idem catálogo
+# bash (ms-contratos necesita el secreto para llamar al catálogo; sin él esas llamadas responden 503)
+export KEYCLOAK_CLIENT_SECRET=backend-secret-rovedasa-2026
+java -Duser.timezone=America/Argentina/Cordoba -Dapp.reloj.fecha-fija=2027-03-15 -Dspring.profiles.active=demo -jar ms-contratos/target/ms-contratos-1.0.0-SNAPSHOT.jar   # idem catálogo
+npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json --env-var hoyFijo=2027-03-15
+```
+```powershell
+# PowerShell (las -D van entre comillas para que PowerShell no las parta en el punto)
+$env:KEYCLOAK_CLIENT_SECRET="backend-secret-rovedasa-2026"; java "-Duser.timezone=America/Argentina/Cordoba" "-Dapp.reloj.fecha-fija=2027-03-15" "-Dspring.profiles.active=demo" -jar ms-contratos/target/ms-contratos-1.0.0-SNAPSHOT.jar   # idem catálogo
 npx newman run coleccion/RovedaSA.postman_collection.json -e coleccion/local.postman_environment.json --env-var hoyFijo=2027-03-15
 ```
 

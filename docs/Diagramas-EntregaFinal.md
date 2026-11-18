@@ -1,7 +1,7 @@
 # Diagramas Actualizados — Entrega Final (Alquileres Roveda SA)
 
 > [!NOTE] Comparación con la 1ra Entrega
-> Este documento refleja **la arquitectura y el modelo efectivamente implementados** para la presentación final (al 16/11/2026).  
+> Este documento refleja **la arquitectura y el modelo efectivamente implementados** para la presentación final (al 18/11/2026, después de la auditoría integral del PR #17). El estado de avance y las decisiones que difieren del Alcance están en [Estado del proyecto](./EstadoDelProyecto.md).  
 > Los diagramas originales presentados en la 1ra Entrega se mantienen intactos en [Diagramas.md](./Diagramas.md) (y sus imágenes en [`./img/`](./img/)) para conservar la trazabilidad histórica y poder comparar la evolución del diseño.
 
 **Documentos relacionados:** [Diagramas originales (1ra Entrega)](./Diagramas.md) · [Alcance Comprometido](./Alcance.md) · [BCRA y Resiliencia](./BCRA-Resiliencia.md) · [Proceso Principal](./ProcesoPrincipal.md)
@@ -15,7 +15,7 @@
 | **Rutas y capacidades del API Gateway** | Enrutaba `/api/propiedades/**`, `/api/personas/**`, `/api/contratos/**` y `/api/cuotas/**`. | Suma ruta `/api/indices/**`, **Swagger UI unificado** (`/swagger-ui.html`, `/v3/api-docs/catalogo` y `/v3/api-docs/contratos`), **CORS global**, `/actuator/loggers` protegido para `ADMINISTRADOR` y errores propios con `ApiError` (401 con `WWW-Authenticate`, 403, 404 de ruta inexistente, 503 de servicio caído, 504 por timeout de 20 s). El header `Authorization` pasa tal cual al microservicio (no hay filtro `TokenRelay`). | Centraliza la documentación OpenAPI de ambos microservicios detrás del puerto `:8080`, evita errores de CORS y habilita trazabilidad/loggers en caliente. |
 | **Auth inter-servicio (`ms-contratos` → `ms-catalogo`)** | Planteado con `OAuth2 Client Credentials` (`backend-services`). | Implementado como se planteó: `ProveedorTokenServicio` pide el token de la cuenta de servicio `backend-services` (rol `ADMINISTRADOR` en `realm-export.json`) por **client credentials** con `RestClient` al endpoint de tokens de Keycloak y lo reutiliza hasta 30 s antes de que venza. `RestClientConfig` lo pone en `Authorization` junto con el `X-Correlation-ID` (`JdkClientHttpRequestFactory` para soportar HTTP `PATCH`); si el catálogo responde 401, renueva el token y reintenta una vez. El secreto sale de la variable `KEYCLOAK_CLIENT_SECRET`. | Las llamadas al catálogo no dependen del token del usuario ni de que haya uno (el ajuste programado `@Scheduled` corre sin usuario); el catálogo las autoriza por el rol de la cuenta de servicio. Además se incorporó **compensación Saga** ante fallas locales post-`PATCH`. |
 | **Caché de índices (`db_contratos`)** | Entidad `IndiceIclCache` / tabla `indices_icl_cache` (solo `fecha` y `valor`). | Generalizada a entidad `IndiceCache` / tabla **`indices_cache`** con `tipo_indice` (`ICL`, `IPC`) y `UK (tipo_indice, fecha)`. | Permite cumplir el alcance obligatorio de ICL y sumar soporte de IPC reutilizando el mismo caché y cliente BCRA. |
-| **Entidad `Ajuste`** | Solo fechas, valores de índice, montos y `%` de variación. | Suma `tipo_indice`, `coeficiente` (`NUMERIC(19,6)`) y `origen` (`BCRA` o `CACHE_CONTINGENCIA`). | Auditoría completa: deja trazado si cada ajuste usó datos en vivo del BCRA o el caché de contingencia. |
+| **Entidad `Ajuste`** | Solo fechas, valores de índice, montos y `%` de variación. | Suma `tipo_indice`, `coeficiente` (`NUMERIC(19,8)`), las fechas reales del dato usado (`fecha_valor_indice_desde/hasta`) y `origen` (`BCRA` o `CACHE_CONTINGENCIA`). | Auditoría completa: deja trazado si cada ajuste usó datos en vivo del BCRA o el caché de contingencia. |
 | **Entidad `Contrato`** | Incluía lógica de negocio (`seniar()`, `activar()`, etc.) y un campo `estadoActual: EstadoContrato`. | Entidad JPA limpia con `tipo_indice` (default `ICL`), `motivo_cancelacion`, `senia_retenida`, `penalizacion_rescision`, `@Version`, `fecha_alta` y `fecha_modificacion`. | Separa persistencia (JPA) del comportamiento (Patrón State con beans Spring stateless). |
 | **Patrón State (`ms-contratos`)** | Clases `Creado`, `Senado`, `Activo`, `Cancelado`, `Rescindido`, `Finalizado` instanciadas por estado. | Beans `@Component` stateless (`EstadoCreado`, `EstadoSeniado`, `EstadoActivo`, `EstadoCancelado`, `EstadoRescindido`, `EstadoFinalizado`) resueltos vía **`EstadoContratoFactory`** + helper `GeneradorCuotasTramo` + `ContratoService` (orquestador Saga y `Clock`). | Evita recrear/inyectar dependencias dentro de entidades JPA y facilita testing determinístico con `Clock`. |
 | **Evaluación del garante (`ms-catalogo`)** | Método `esGaranteSolvente()` sobre `Persona`. | Desacoplado en `EvaluacionGaranteService` + `SolvenciaGaranteService` + `EvaluadorSolvencia` (RN-07: `situación <= 2` y `cheques == 0`). `Persona` registra `situacion_crediticia_bcra`, `cheques_rechazados` y `fecha_consulta_bcra`. | Separa reglas puras de dominio del cliente HTTP BCRA y la transacción corta en BD. |
@@ -263,9 +263,11 @@ package "contratos_db (PostgreSQL 16) - ms-contratos" {
         * fecha_aplicacion : DATE
         * fecha_indice_desde : DATE
         * fecha_indice_hasta : DATE
-        * valor_indice_desde : NUMERIC(19,6)
-        * valor_indice_hasta : NUMERIC(19,6)
-        * coeficiente : NUMERIC(19,6)
+        fecha_valor_indice_desde : DATE
+        fecha_valor_indice_hasta : DATE
+        * valor_indice_desde : NUMERIC(19,8)
+        * valor_indice_hasta : NUMERIC(19,8)
+        * coeficiente : NUMERIC(19,8)
         * monto_anterior : NUMERIC(15,2)
         * monto_nuevo : NUMERIC(15,2)
         * porcentaje_variacion : NUMERIC(9,4)
@@ -285,6 +287,8 @@ package "contratos_db (PostgreSQL 16) - ms-contratos" {
         * monto_base : NUMERIC(15,2)
         * estado : VARCHAR(20)
         fecha_pago : DATE
+        fecha_emision : DATE
+        * version : BIGINT
         UK (contrato_id, nro_cuota)
     }
 
@@ -641,21 +645,21 @@ state SENIADO {
     SENIADO : **Prohibido:** seniar(), aplicarAjuste(), rescindir(), finalizar()
 }
 
-SENIADO --> ACTIVO : POST /activar\n[hoy <= fechaLimiteSenia && POST /evaluacion-solvencia (esSolvente=true)]\n/ PATCH Catálogo (ALQUILADA) + cancelar borradores CREADO\n+ generar cuotas tramo inicial + Saga compensa a RESERVADA si falla BD
+SENIADO --> ACTIVO : POST /activar\n[hoy <= fechaLimiteSenia && POST /evaluacion-solvencia (esSolvente=true)]\n/ PATCH Catálogo (ALQUILADA, estadoEsperado=RESERVADA) + cancelar borradores CREADO\n+ generar cuotas tramo 0 + Saga: /estado/compensacion a RESERVADA si falla BD o el catálogo no responde claro
 
-SENIADO --> CANCELADO : POST /cancelar\n[motivo, retenerSenia]\n/ PATCH Catálogo (DISPONIBLE) + Saga compensa a RESERVADA si falla BD
+SENIADO --> CANCELADO : POST /cancelar\n[motivo, retenerSenia]\n/ PATCH Catálogo (DISPONIBLE, estadoEsperado=RESERVADA) + Saga: /estado/compensacion a RESERVADA si falla BD
 
 state ACTIVO {
     ACTIVO : **Bean:** EstadoActivo
     ACTIVO : **Permitido:** aplicarAjuste(), rescindir(), finalizar()
     ACTIVO : **Prohibido:** seniar(), activar(), cancelar()
 
-    ACTIVO --> ACTIVO : POST /ajustes (o @Scheduled ajuste-periodico)\n[mesesDesdeUltimoHito >= frecuencia && sin duplicado fechaHasta]\n/ IndiceService (BCRA o indices_cache) + guardar Ajuste\n+ generar cuotas del nuevo tramo
+    ACTIVO --> ACTIVO : POST /ajustes (o @Scheduled ajuste-periodico)\n[hoy >= H_k = fechaInicio + k·frecuencia && H_k < fechaFin && ajuste k no aplicado]\n/ IndiceService (BCRA o indices_cache ≤ 7 días) ventana H_(k-1)→H_k + guardar Ajuste\n+ generar cuotas del tramo k (el periódico pone al día todos los pendientes)
 }
 
-ACTIVO --> RESCINDIDO : POST /rescindir\n[fechaRescision >= fechaInicio]\n/ multa (1.5x si < 6 meses, 1.0x si >= 6)\n+ anular cuotas PENDIENTE posteriores a fechaRescision\n+ PATCH Catálogo (DISPONIBLE) + Saga compensa a ALQUILADA si falla BD
+ACTIVO --> RESCINDIDO : POST /rescindir\n[fechaInicio <= fechaRescision <= min(hoy, fechaFin)]\n/ multa (1.5x si < 6 meses, 1.0x si >= 6)\n+ anular cuotas PENDIENTE que vencen después de fechaRescision\n+ PATCH Catálogo (DISPONIBLE) + Saga: /estado/compensacion a ALQUILADA si falla BD
 
-ACTIVO --> FINALIZADO : POST /finalizar\n[hoy >= fechaFin]\n/ PATCH Catálogo (DISPONIBLE) + Saga compensa a ALQUILADA si falla BD
+ACTIVO --> FINALIZADO : POST /finalizar\n[hoy >= fechaFin]\n/ PATCH Catálogo (DISPONIBLE) (las cuotas devengadas no se anulan)\n+ Saga: /estado/compensacion a ALQUILADA si falla BD
 
 state CANCELADO {
     CANCELADO : **Bean:** EstadoCancelado (terminal)
