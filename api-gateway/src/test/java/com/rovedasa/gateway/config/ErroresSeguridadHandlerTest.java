@@ -11,6 +11,7 @@ import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,6 +40,7 @@ class ErroresSeguridadHandlerTest {
                 () -> assertEquals(HttpStatus.UNAUTHORIZED, ex.getResponse().getStatusCode()),
                 () -> assertEquals(MediaType.APPLICATION_JSON, ex.getResponse().getHeaders().getContentType()),
                 () -> assertEquals("req-test-123", ex.getResponse().getHeaders().getFirst("X-Correlation-ID")),
+                () -> assertEquals("Bearer", ex.getResponse().getHeaders().getFirst("WWW-Authenticate")),
                 () -> assertEquals(401, body.get("status").asInt()),
                 () -> assertEquals("Unauthorized", body.get("error").asText()),
                 () -> assertEquals("/api/contratos", body.get("path").asText()),
@@ -58,5 +60,20 @@ class ErroresSeguridadHandlerTest {
                 () -> assertEquals(403, body.get("status").asInt()),
                 () -> assertEquals("Forbidden", body.get("error").asText()),
                 () -> assertEquals("req-test-123", body.get("correlationId").asText()));
+    }
+
+    @Test
+    @DisplayName("401 con token inválido: WWW-Authenticate indica invalid_token")
+    void tokenInvalidoDevuelve401ConInvalidToken() throws Exception {
+        MockServerWebExchange ex = exchange("GET", "/api/contratos");
+
+        handler.commence(ex, new InvalidBearerTokenException("Jwt expired at 2026-11-17T10:00:00Z")).block();
+
+        JsonNode body = mapper.readTree(ex.getResponse().getBodyAsString().block());
+        assertAll(
+                () -> assertEquals(HttpStatus.UNAUTHORIZED, ex.getResponse().getStatusCode()),
+                () -> assertEquals("Bearer error=\"invalid_token\"",
+                        ex.getResponse().getHeaders().getFirst("WWW-Authenticate")),
+                () -> assertEquals(401, body.get("status").asInt()));
     }
 }

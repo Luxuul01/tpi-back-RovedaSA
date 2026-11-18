@@ -164,6 +164,51 @@ class PropiedadTest {
         assertThrows(OperacionInvalidaException.class, propiedad::reactivar);
     }
 
+    // --- Compensaciones (Saga de ms-contratos) ---
+
+    @Test
+    void revertirAlquilerVuelveAReservadaConservandoPersonas() {
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        propiedad.revertirAlquiler();
+
+        assertEquals(EstadoPropiedadEnum.RESERVADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+        assertSame(garante, propiedad.getGarante());
+    }
+
+    @Test
+    void noDebeRevertirAlquilerSiNoEstaAlquilada() {
+        propiedad.reservar(inquilino, garante);
+
+        assertThrows(OperacionInvalidaException.class, propiedad::revertirAlquiler);
+        assertEquals(EstadoPropiedadEnum.RESERVADA, propiedad.getEstado());
+    }
+
+    @Test
+    void restaurarAlquilerDesdeDisponibleReasignaPersonas() {
+        propiedad.restaurarAlquiler(inquilino, garante);
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+        assertSame(garante, propiedad.getGarante());
+    }
+
+    @Test
+    void noDebeRestaurarAlquilerSinInquilino() {
+        assertThrows(OperacionInvalidaException.class, () -> propiedad.restaurarAlquiler(null, garante));
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+        assertNull(propiedad.getGarante());
+    }
+
+    @Test
+    void noDebeRestaurarAlquilerSiNoEstaDisponible() {
+        propiedad.reservar(inquilino, garante);
+
+        assertThrows(OperacionInvalidaException.class, () -> propiedad.restaurarAlquiler(inquilino, garante));
+    }
+
     // --- Código autogenerado ---
 
     @Test

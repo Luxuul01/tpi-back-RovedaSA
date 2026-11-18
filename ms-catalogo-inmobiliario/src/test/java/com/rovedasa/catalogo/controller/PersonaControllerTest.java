@@ -98,7 +98,7 @@ class PersonaControllerTest {
 
     @Test
     void evaluarSolvenciaConBcraCaidoDevuelve503ConApiError() throws Exception {
-        String mensaje = "La Central de Deudores del BCRA no está disponible en este momento. Reintente más tarde.";
+        String mensaje = "La Central de Deudores del BCRA no está disponible en este momento. Reintentá más tarde.";
         when(evaluacionGaranteService.evaluar(10L)).thenThrow(new BcraNoDisponibleException(mensaje, null));
 
         mockMvc.perform(evaluarSolvencia(10L).with(conRol("ADMINISTRADOR")).header("X-Correlation-ID", "corr-bcra"))

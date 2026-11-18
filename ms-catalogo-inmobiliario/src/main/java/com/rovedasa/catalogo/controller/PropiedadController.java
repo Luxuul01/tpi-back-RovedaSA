@@ -5,6 +5,7 @@ import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
 import com.rovedasa.catalogo.service.PropiedadService;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
+import com.rovedasa.commons.dto.CompensarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.ApiError;
@@ -128,11 +129,55 @@ public class PropiedadController {
         return propiedadService.darDeBaja(id);
     }
 
-    // Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)
-    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler o liberación)")
+    // F-07. Lo consume ms-contratos con token de servicio (rol ADMINISTRADOR, heredado del @PreAuthorize de la clase)
+    @Operation(summary = "Cambiar el estado de una propiedad (reserva, alquiler o liberación)",
+            description = "Transiciones de RN-05: DISPONIBLE -> RESERVADA, RESERVADA -> ALQUILADA o DISPONIBLE, "
+                    + "ALQUILADA -> DISPONIBLE. Al reservar se pueden asignar inquilino y garante; al liberar se "
+                    + "desvinculan. Si viene estadoEsperado y la propiedad no está en ese estado, responde 409 sin "
+                    + "cambiar nada (lo usa ms-contratos para no pisar un cambio de otro proceso).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Estado cambiado"),
+            @ApiResponse(responseCode = "400", description = "Transición inválida, datos inválidos o persona sin el "
+                    + "rol que corresponde", content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad o alguna de las personas",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad no está en el estadoEsperado, o cambió al "
+                    + "mismo tiempo (control de versión)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     @PatchMapping("/{id}/estado")
     public PropiedadDTO actualizarEstado(@PathVariable("id") Long id,
             @Valid @RequestBody ActualizarEstadoPropiedadDTO solicitud) {
         return propiedadService.actualizarEstado(id, solicitud);
+    }
+
+    // Compensación de la Saga de ms-contratos. Solo ADMINISTRADOR (regla por URL de PATCH y @PreAuthorize de la clase)
+    @Operation(summary = "Deshacer un cambio de estado (compensación de la Saga de ms-contratos)",
+            description = "Vuelve la propiedad de estadoActual a estadoAnterior. Solo deshace transiciones válidas "
+                    + "de RN-05: RESERVADA -> DISPONIBLE (seña), ALQUILADA -> RESERVADA (activación), "
+                    + "DISPONIBLE -> RESERVADA (cancelación de la seña) y DISPONIBLE -> ALQUILADA (rescisión o "
+                    + "finalización; exige inquilinoId). Pasa por el mismo control de versión que el cambio de estado.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Cambio deshecho; devuelve la propiedad"),
+            @ApiResponse(responseCode = "400", description = "El par no es el inverso de una transición válida, falta "
+                    + "el inquilino para volver a ALQUILADA o una persona no tiene el rol que corresponde",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la propiedad o alguna de las personas",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "La propiedad no está en estadoActual, o cambió al mismo "
+                    + "tiempo (control de versión)", content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PatchMapping("/{id}/estado/compensacion")
+    public PropiedadDTO compensarEstado(@PathVariable("id") Long id,
+            @Valid @RequestBody CompensarEstadoPropiedadDTO solicitud) {
+        return propiedadService.compensarEstado(id, solicitud);
     }
 }

@@ -1,5 +1,6 @@
 package com.rovedasa.contratos;
 
+import com.rovedasa.contratos.config.ProveedorTokenServicio;
 import com.rovedasa.contratos.model.EstadoContratoEnum;
 import com.rovedasa.contratos.model.EstadoCuotaEnum;
 import com.rovedasa.contratos.dto.OrigenDatoEnum;
@@ -31,7 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
-@ActiveProfiles({"local", "test"})
+// Solo "test" (H2): la seguridad queda activa como en producción; este test no hace llamadas HTTP
+@ActiveProfiles("test")
 @Transactional
 class ContratosIntegrationTest {
 
@@ -51,11 +53,15 @@ class ContratosIntegrationTest {
     @Qualifier("catalogoRestClient")
     private RestClient catalogoRestClient;
 
+    @Autowired
+    private ProveedorTokenServicio proveedorTokenServicio;
+
     @Test
     @DisplayName("Contexto Spring + JPA: levanta beans, persiste ciclo State completo y ejecuta queries de repositorios")
     void debeLevantarContextoYPersistirCicloDeVidaCompleto() {
         assertNotNull(estadoContratoFactory);
         assertNotNull(catalogoRestClient);
+        assertNotNull(proveedorTokenServicio);
 
         for (EstadoContratoEnum tipo : EstadoContratoEnum.values()) {
             assertEquals(tipo, estadoContratoFactory.obtenerEstado(tipo).getTipoEstado());
@@ -105,8 +111,8 @@ class ContratosIntegrationTest {
         List<Cuota> cuotas = cuotaRepository.findByContratoIdOrderByNroCuotaAsc(contrato.getId());
         assertEquals(6, cuotas.size());
         assertTrue(cuotaRepository.findByContratoIdAndNroCuota(contrato.getId(), 4).isPresent());
-        assertEquals(5, cuotaRepository.findByContratoIdAndEstadoAndFechaVencimientoAfter(
-                contrato.getId(), EstadoCuotaEnum.PENDIENTE, LocalDate.of(2026, 7, 15)).size());
+        assertEquals(5, cuotaRepository.findByContratoIdAndEstadoOrderByNroCuotaAsc(contrato.getId(), EstadoCuotaEnum.PENDIENTE)
+                .stream().filter(c -> c.getFechaVencimiento().isAfter(LocalDate.of(2026, 7, 15))).count());
     }
 
     @Test

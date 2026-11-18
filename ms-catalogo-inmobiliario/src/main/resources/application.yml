@@ -3,24 +3,32 @@ server:
   # Respeta X-Forwarded-* del API Gateway para que Swagger UI apunte a :8080 al probar endpoints
   forward-headers-strategy: framework
 
+# Perfil por defecto: desarrollo desde el host (IDE o ./mvnw spring-boot:run) contra la infraestructura del
+# docker compose publicada en localhost. Las variables de entorno sobrescriben cualquier valor (Alcance, sección 11).
 spring:
   application:
     name: ms-catalogo-inmobiliario
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/catalogo_db
-    username: postgres
-    password: postgrespassword
+    url: jdbc:postgresql://localhost:${DB_CATALOGO_PORT:5432}/catalogo_db
+    username: ${CATALOGO_DB_USER:postgres}
+    # Default = contraseña de demo del docker compose, solo para el perfil por defecto (desarrollo en el host).
+    # En el perfil docker no hay default: la tiene que pasar el compose (ver application-docker.yml).
+    password: ${CATALOGO_DB_PASSWORD:postgrespassword}
     driver-class-name: org.postgresql.Driver
+
+  # Mensajes de Bean Validation sin texto propio (por ejemplo @NotBlank) en español, sin importar el
+  # idioma de la JVM ni el Accept-Language del cliente: el ApiError siempre sale en español
+  web:
+    locale: es
+    locale-resolver: fixed
 
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    # Sin SQL en los logs (para verlo, activar el perfil local)
+    show-sql: false
 
   data:
     web:
@@ -32,7 +40,7 @@ spring:
       resourceserver:
         jwt:
           # Solo jwk-set-uri para aceptar tokens emitidos via localhost, 127.0.0.1 o keycloak:8080 en Docker
-          jwk-set-uri: http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/certs
+          jwk-set-uri: http://localhost:${KEYCLOAK_PORT:8083}/realms/rovedasa-realm/protocol/openid-connect/certs
 
 # Integracion externa GeoRef AR
 georef:
@@ -45,20 +53,24 @@ georef:
 bcra:
   api:
     base-url: https://api.bcra.gob.ar
-    connect-timeout-ms: 3000
-    read-timeout-ms: 5000
+    # Cortos a propósito: ms-contratos espera al catálogo hasta 12 s al activar un contrato
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
   solvencia:
     # RN-07: solvente con situacion crediticia 1 o 2 (y 0 cheques rechazados)
     situacion-maxima: 2
 
 logging:
   level:
-    com.rovedasa.catalogo: DEBUG
+    com.rovedasa: INFO
+    # avisos de ddl-auto ("constraint ... does not exist, skipping") al arrancar con la base vacía
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: ERROR
 
 management:
   endpoints:
     web:
       exposure:
+        # Protegidos en SecurityConfig: solo health es público
         include: health,info,metrics,loggers
   endpoint:
     health:

@@ -1,3 +1,6 @@
+# Todo lo configurable (contraseñas, secretos y puertos del host) sale de variables de entorno con un valor de
+# demo por defecto, así `docker compose up -d --build` funciona sin configurar nada. Para cambiarlos, copiar
+# .env.example a .env (docker compose lo lee solo) y editar los valores. Ver README, sección "Variables de entorno".
 services:
   db-catalogo:
     image: postgres:16-alpine
@@ -6,9 +9,9 @@ services:
     environment:
       POSTGRES_DB: catalogo_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_PASSWORD: ${CATALOGO_DB_PASSWORD:-postgrespassword}
     ports:
-      - "5432:5432"
+      - "${DB_CATALOGO_PORT:-5432}:5432"
     volumes:
       - pgdata_catalogo:/var/lib/postgresql/data
     networks:
@@ -26,9 +29,9 @@ services:
     environment:
       POSTGRES_DB: contratos_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_PASSWORD: ${CONTRATOS_DB_PASSWORD:-postgrespassword}
     ports:
-      - "5433:5432"
+      - "${DB_CONTRATOS_PORT:-5433}:5432"
     volumes:
       - pgdata_contratos:/var/lib/postgresql/data
     networks:
@@ -44,12 +47,14 @@ services:
     container_name: tpi-keycloak
     restart: unless-stopped
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
+      # Lo reemplaza Keycloak en el placeholder ${KEYCLOAK_CLIENT_SECRET} de realm-export.json al importarlo
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-backend-secret-rovedasa-2026}
     command: start-dev --import-realm
     ports:
-      - "8083:8080"
+      - "${KEYCLOAK_PORT:-8083}:8080"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     networks:
@@ -72,8 +77,9 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
+      CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:-postgrespassword}
     ports:
-      - "8081:8081"
+      - "${CATALOGO_PORT:-8081}:8081"
     volumes:
       - logs_catalogo:/app/logs
     networks:
@@ -98,8 +104,11 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
+      CONTRATOS_DB_PASSWORD: ${CONTRATOS_DB_PASSWORD:-postgrespassword}
+      # Secreto de la cuenta de servicio backend-services: con él pide el token para llamar al catálogo
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-backend-secret-rovedasa-2026}
     ports:
-      - "8082:8082"
+      - "${CONTRATOS_PORT:-8082}:8082"
     volumes:
       - logs_contratos:/app/logs
     networks:
@@ -127,7 +136,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     volumes:
       - logs_gateway:/app/logs
     networks:
@@ -154,7 +163,7 @@ services:
     container_name: tpi-loki
     restart: unless-stopped
     ports:
-      - "3100:3100"
+      - "${LOKI_PORT:-3100}:3100"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - loki_data:/loki
@@ -179,10 +188,10 @@ services:
     container_name: tpi-grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro

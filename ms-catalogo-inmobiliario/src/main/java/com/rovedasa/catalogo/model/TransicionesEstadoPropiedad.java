@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Transiciones de estado permitidas vía PATCH /api/propiedades/{id}/estado (las dispara ms-contratos).
+ * Transiciones de estado permitidas vía PATCH /api/propiedades/{id}/estado (las dispara ms-contratos), RN-05.
  * Vive en el catálogo y no en EstadoPropiedadEnum porque el enum es de inmobiliaria-commons.
  * Pasar al mismo estado no es una transición válida. INACTIVA no participa de este flujo.
  */
@@ -31,5 +31,13 @@ public final class TransicionesEstadoPropiedad {
 
     public static boolean puedeTransicionar(EstadoPropiedadEnum origen, EstadoPropiedadEnum destino) {
         return PERMITIDAS.getOrDefault(origen, Set.of()).contains(destino);
+    }
+
+    /**
+     * Compensación (Saga de ms-contratos): volver de estadoActual a estadoAnterior solo se permite si
+     * estadoAnterior -> estadoActual es una transición válida, es decir, si se está deshaciendo una de ellas.
+     */
+    public static boolean puedeCompensar(EstadoPropiedadEnum estadoActual, EstadoPropiedadEnum estadoAnterior) {
+        return puedeTransicionar(estadoAnterior, estadoActual);
     }
 }

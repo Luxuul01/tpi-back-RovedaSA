@@ -40,6 +40,10 @@ public class ContratoResponse {
     private BigDecimal porcentajeMoraDiaria;
     private Integer diaVencimientoMes;
     private EstadoContratoEnum estado;
+    /** RN-09: motivo registrado al cancelar (borrador descartado o seña caída). */
+    private String motivoCancelacion;
+    /** RN-09: si al cancelar una seña se la retuvo (true) o se la devuelve (false). */
+    private Boolean seniaRetenida;
     private BigDecimal penalizacionRescision;
     private List<CuotaResumenDTO> cuotas;
     private List<AjusteResponse> ajustes;

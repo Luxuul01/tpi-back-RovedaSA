@@ -7,7 +7,9 @@ import com.rovedasa.contratos.dto.CrearContratoRequest;
 import com.rovedasa.contratos.dto.CuotaResumenDTO;
 import com.rovedasa.contratos.dto.RescisionResponse;
 import com.rovedasa.contratos.dto.RescindirContratoRequest;
+import com.rovedasa.contratos.dto.ResumenAjustePeriodicoResponse;
 import com.rovedasa.contratos.dto.SeniarContratoRequest;
+import com.rovedasa.contratos.service.AjusteProgramadoService;
 import com.rovedasa.contratos.service.ContratoService;
 import com.rovedasa.contratos.service.CuotaService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +43,7 @@ public class ContratoController {
 
     private final ContratoService contratoService;
     private final CuotaService cuotaService;
+    private final AjusteProgramadoService ajusteProgramadoService;
 
     // ------------------------------------------------------------------
     // Crear borrador (POST /api/contratos)
@@ -167,15 +170,18 @@ public class ContratoController {
     // ------------------------------------------------------------------
     // Aplicar ajuste por el índice del contrato (POST /api/contratos/{id}/ajustes)
     // ------------------------------------------------------------------
-    @Operation(summary = "Aplicar ajuste por el índice del contrato (ICL o IPC) a un contrato activo y generar nuevas cuotas")
+    @Operation(summary = "Aplicar el próximo ajuste por el índice del contrato (ICL o IPC) y generar las cuotas del período",
+            description = "El ajuste k usa la ventana desde H(k-1) hasta H(k), con H(k) = fechaInicio + k x frecuencia meses. "
+                    + "Las fechas del body son opcionales; si se envían tienen que coincidir con esa ventana (si no, 400).")
     @PostMapping("/{id}/ajustes")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> aplicarAjuste(
             @PathVariable("id") Long id,
-            @Valid @RequestBody AplicarAjusteRequest request,
+            @Valid @RequestBody(required = false) AplicarAjusteRequest request,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/ajustes - desde={} hasta={}", id, request.getFechaIndiceDesde(), request.getFechaIndiceHasta());
+        log.info("POST /api/contratos/{}/ajustes - desde={} hasta={}", id,
+                request != null ? request.getFechaIndiceDesde() : null, request != null ? request.getFechaIndiceHasta() : null);
         ContratoResponse response = contratoService.aplicarAjuste(id, request, usuario.sub());
         return ResponseEntity.ok(response);
     }
@@ -198,14 +204,14 @@ public class ContratoController {
     // ------------------------------------------------------------------
     // Ajuste periódico masivo (POST /api/contratos/ajuste-periodico)
     // ------------------------------------------------------------------
-    @Operation(summary = "Ejecutar ajuste masivo de ICL para todos los contratos activos que correspondan")
+    @Operation(summary = "Ejecutar el ajuste periódico: pone al día todos los ajustes pendientes de los contratos activos",
+            description = "Devuelve cuántos contratos se revisaron, cuántos ajustes se aplicaron y cuáles quedaron pendientes y por qué.")
     @PostMapping("/ajuste-periodico")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
-    public ResponseEntity<Void> ejecutarAjustePeriodico(Authentication authentication) {
+    public ResponseEntity<ResumenAjustePeriodicoResponse> ejecutarAjustePeriodico(Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
         log.info("POST /api/contratos/ajuste-periodico - usuario sub={}", usuario.sub());
-        contratoService.ejecutarAjustePeriodico();
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(ajusteProgramadoService.ejecutarAjustePeriodico());
     }
 
     // ------------------------------------------------------------------
@@ -226,5 +232,4 @@ public class ContratoController {
                 id, contrato.getPorcentajeMoraDiaria(), fechaReferencia);
         return ResponseEntity.ok(cuotas);
     }
-
 }

@@ -4,7 +4,6 @@ import com.rovedasa.catalogo.model.PrecioReferenciaZona;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Las búsquedas son por provincia y ciudad NORMALIZADAS: quien llama tiene que pasar los valores
@@ -19,14 +18,5 @@ public interface PrecioReferenciaZonaRepository extends JpaRepository<PrecioRefe
      * @param ciudadNormalizada    ciudad ya normalizada (ej. "cordoba")
      */
     List<PrecioReferenciaZona> findByProvinciaNormalizadaAndCiudadNormalizada(
-            String provinciaNormalizada, String ciudadNormalizada);
-
-    /**
-     * Valor por defecto de la ciudad: la fila sin centro geográfico.
-     *
-     * @param provinciaNormalizada provincia ya normalizada (ej. "cordoba")
-     * @param ciudadNormalizada    ciudad ya normalizada (ej. "cordoba")
-     */
-    Optional<PrecioReferenciaZona> findFirstByProvinciaNormalizadaAndCiudadNormalizadaAndLatitudCentroIsNull(
             String provinciaNormalizada, String ciudadNormalizada);
 }

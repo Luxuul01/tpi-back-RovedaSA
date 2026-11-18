@@ -3,35 +3,55 @@ server:
   # Respeta X-Forwarded-* del API Gateway para que Swagger UI apunte a :8080 al probar endpoints
   forward-headers-strategy: framework
 
+# Perfil por defecto: desarrollo desde el host (IDE o ./mvnw spring-boot:run) contra la infraestructura del
+# docker compose publicada en localhost. Las variables de entorno sobrescriben cualquier valor (Alcance, sección 11).
 spring:
   application:
     name: ms-contratos
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/contratos_db
-    username: postgres
-    password: postgrespassword
+    url: jdbc:postgresql://localhost:${DB_CONTRATOS_PORT:5433}/contratos_db
+    username: ${CONTRATOS_DB_USER:postgres}
+    # Default = contraseña de demo del docker compose, solo para el perfil por defecto (desarrollo en el host).
+    # En el perfil docker no hay default: la tiene que pasar el compose (ver application-docker.yml).
+    password: ${CONTRATOS_DB_PASSWORD:postgrespassword}
     driver-class-name: org.postgresql.Driver
+
+  # Mensajes de Bean Validation sin texto propio (por ejemplo @NotBlank) en español, sin importar el
+  # idioma de la JVM ni el Accept-Language del cliente: el ApiError siempre sale en español
+  web:
+    locale: es
+    locale-resolver: fixed
 
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    # Sin SQL en los logs (para verlo, activar el perfil local)
+    show-sql: false
 
   security:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/certs
+          jwk-set-uri: http://localhost:${KEYCLOAK_PORT:8083}/realms/rovedasa-realm/protocol/openid-connect/certs
 
-# Comunicacion inter-servicio con ms-catalogo-inmobiliario
+# Comunicacion inter-servicio con ms-catalogo-inmobiliario (Alcance, sección 6)
 catalogo:
   service:
-    base-url: http://localhost:8081/api
+    base-url: http://localhost:${CATALOGO_PORT:8081}/api
+    connect-timeout-ms: 3000
+    # Mayor que lo que puede tardar el catálogo con el BCRA (2 s + 3 s) y GeoRef, para no cortar antes que él
+    read-timeout-ms: 12000
+
+# Token de la cuenta de servicio backend-services (client credentials) con el que se llama al catálogo
+keycloak:
+  cuenta-servicio:
+    token-uri: http://localhost:${KEYCLOAK_PORT:8083}/realms/rovedasa-realm/protocol/openid-connect/token
+    client-id: backend-services
+    # Sin default en el código: el secreto sale de la variable de entorno (el docker compose la define).
+    # Si falta, las llamadas al catálogo responden 503 indicando que hay que configurarla.
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:}
     connect-timeout-ms: 3000
     read-timeout-ms: 5000
 
@@ -41,15 +61,21 @@ bcra:
     base-url: https://api.bcra.gob.ar
     connect-timeout-ms: 3000
     read-timeout-ms: 5000
+  cache:
+    # Con el BCRA caído se acepta un valor del caché de hasta estos días antes de la fecha pedida
+    max-antiguedad-dias: 7
 
 logging:
   level:
-    com.rovedasa.contratos: DEBUG
+    com.rovedasa: INFO
+    # avisos de ddl-auto ("constraint ... does not exist, skipping") al arrancar con la base vacía
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: ERROR
 
 management:
   endpoints:
     web:
       exposure:
+        # Protegidos en SecurityConfig: solo health es público; info, metrics y loggers exigen ADMINISTRADOR
         include: health,info,metrics,loggers
   endpoint:
     health:

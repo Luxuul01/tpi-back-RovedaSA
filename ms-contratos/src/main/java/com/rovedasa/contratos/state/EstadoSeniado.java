@@ -1,5 +1,6 @@
 package com.rovedasa.contratos.state;
 
+import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.contratos.model.EstadoContratoEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.contratos.model.Contrato;
@@ -20,6 +21,11 @@ public class EstadoSeniado implements EstadoContrato {
     }
 
     @Override
+    public EstadoPropiedadEnum estadoPropiedadOcupada() {
+        return EstadoPropiedadEnum.RESERVADA;
+    }
+
+    @Override
     public List<Cuota> activar(Contrato contrato, LocalDate fechaActual) {
         if (fechaActual == null) {
             throw new OperacionInvalidaException("La fecha actual es obligatoria para activar el contrato");
@@ -35,7 +41,8 @@ public class EstadoSeniado implements EstadoContrato {
         }
 
         contrato.setEstado(EstadoContratoEnum.ACTIVO);
-        List<Cuota> cuotasIniciales = GeneradorCuotasTramo.generarSiguienteTramo(contrato, null);
+        // Tramo 0: cuotas i ∈ [0, min(frecuencia, totalMeses))
+        List<Cuota> cuotasIniciales = GeneradorCuotasTramo.generarTramo(contrato, 0, null, fechaActual);
 
         log.info("Contrato {} pasó de SENIADO a ACTIVO. Se generaron {} cuotas iniciales con canon={}",
                 contrato.getNroContrato(), cuotasIniciales.size(), contrato.getMontoActual());
@@ -45,7 +52,7 @@ public class EstadoSeniado implements EstadoContrato {
     @Override
     public void cancelar(Contrato contrato, String motivo, boolean retenerSenia) {
         if (motivo == null || motivo.isBlank()) {
-            throw new OperacionInvalidaException("Debe indicar un motivo para cancelar la seña del contrato");
+            throw new OperacionInvalidaException("Indicá un motivo para cancelar la seña del contrato");
         }
 
         contrato.setMotivoCancelacion(motivo.trim());

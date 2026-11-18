@@ -1,27 +1,21 @@
 package com.rovedasa.contratos.exception;
 
 import com.rovedasa.commons.exception.ApiError;
+import com.rovedasa.commons.exception.GlobalExceptionHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
-
-import java.time.LocalDateTime;
 
 /**
- * Manejo de errores de servicios externos (503) y parámetros inválidos en ms-contratos.
- *
- * Tiene prioridad sobre el GlobalExceptionHandler de commons, que no contempla 503 ni
- * parámetros mal formados ni rutas inexistentes (esos casos terminarían en un 500). Devuelve el mismo ApiError
- * de commons para que todas las respuestas de error tengan el mismo formato.
+ * Errores propios de ms-contratos: 503 cuando un servicio del que depende no está disponible (índice del BCRA
+ * sin caché válido, o el catálogo / Keycloak caídos). Lo transversal (400, 401, 403, 404, 405, 406, 409, 415,
+ * 500) lo resuelve el GlobalExceptionHandler de inmobiliaria-commons; este advice corre antes
+ * (HIGHEST_PRECEDENCE) y devuelve el mismo ApiError.
  */
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -32,48 +26,13 @@ public class IndiceExceptionHandler {
     public ResponseEntity<ApiError> handleIndiceNoDisponible(IndiceNoDisponibleException ex,
                                                              HttpServletRequest request) {
         log.warn("Índice no disponible: {}", ex.getMessage());
-        return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+        return GlobalExceptionHandler.responder(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 
     @ExceptionHandler(CatalogoNoDisponibleException.class)
     public ResponseEntity<ApiError> handleCatalogoNoDisponible(CatalogoNoDisponibleException ex,
                                                                HttpServletRequest request) {
         log.warn("Servicio externo no disponible: {}", ex.getMessage());
-        return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiError> handleTipoInvalido(MethodArgumentTypeMismatchException ex,
-                                                       HttpServletRequest request) {
-        String mensaje = "Valor inválido para el parámetro '" + ex.getName() + "': " + ex.getValue()
-                + ". Las fechas van en formato yyyy-MM-dd y el tipo de índice es ICL o IPC.";
-        log.warn("Parámetro inválido: {}", mensaje);
-        return construir(HttpStatus.BAD_REQUEST, mensaje, request);
-    }
-
-    @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ApiError> handleParametroFaltante(MissingServletRequestParameterException ex,
-                                                            HttpServletRequest request) {
-        String mensaje = "Falta el parámetro obligatorio '" + ex.getParameterName() + "'";
-        log.warn("Parámetro faltante: {}", mensaje);
-        return construir(HttpStatus.BAD_REQUEST, mensaje, request);
-    }
-
-    @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ApiError> handleRutaInexistente(NoResourceFoundException ex, HttpServletRequest request) {
-        return construir(HttpStatus.NOT_FOUND, "No existe el recurso " + request.getRequestURI(), request);
-    }
-
-    private ResponseEntity<ApiError> construir(HttpStatus status, String mensaje, HttpServletRequest request) {
-        String correlationId = MDC.get("correlationId");
-        ApiError error = ApiError.builder()
-                .timestamp(LocalDateTime.now())
-                .status(status.value())
-                .error(status.getReasonPhrase())
-                .message(mensaje)
-                .path(request.getRequestURI())
-                .correlationId(correlationId != null ? correlationId : "N/A")
-                .build();
-        return ResponseEntity.status(status).body(error);
+        return GlobalExceptionHandler.responder(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 }

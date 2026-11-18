@@ -26,21 +26,11 @@ public interface PropiedadRepository extends JpaRepository<Propiedad, Long> {
     @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
     Page<Propiedad> findAll(Pageable pageable);
 
-    // Detalle de una propiedad: trae las tres personas vinculadas en una sola consulta
-    @EntityGraph(attributePaths = {"propietario", "inquilino", "garante"})
-    Optional<Propiedad> findByCodigo(String codigo);
-
-    // En los listados se trae el propietario en la misma consulta para evitar N+1
-    @EntityGraph(attributePaths = {"propietario"})
-    List<Propiedad> findByEstado(EstadoPropiedadEnum estado);
-
+    // En los listados se traen propietario y zona en la misma consulta para evitar N+1
     @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
     Page<Propiedad> findByEstado(EstadoPropiedadEnum estado, Pageable pageable);
 
     // Filtro de seguridad del rol PROPIETARIO (CU-08): la identidad sale del claim sub del JWT
     @EntityGraph(attributePaths = {"propietario", "zonaReferencia"})
     List<Propiedad> findByPropietario_KeycloakUserId(String keycloakUserId);
-
-    @EntityGraph(attributePaths = {"propietario"})
-    List<Propiedad> findByPropietario_Id(Long propietarioId);
 }

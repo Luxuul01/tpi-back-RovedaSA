@@ -14,6 +14,13 @@ import com.rovedasa.commons.exception.OperacionInvalidaException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
@@ -26,8 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(OutputCaptureExtension.class)
 class SolvenciaGaranteServiceTest {
 
     private static final String CUIT = "20123456789";
@@ -109,5 +118,75 @@ class SolvenciaGaranteServiceTest {
     @DisplayName("CUIT con formato inválido: 400")
     void cuitInvalido() {
         assertThrows(OperacionInvalidaException.class, () -> service.evaluar("123", INGRESOS));
+    }
+
+    @Test
+    @DisplayName("BCRA caído: el log no tiene el CUIT completo (la excepción del RestClient trae la URL con el CUIT)")
+    void bcraCaidoNoLogueaElCuit(CapturedOutput salida) {
+        when(bcraClient.obtenerDeudas(CUIT)).thenThrow(new ResourceAccessException(
+                "I/O error on GET request for \"https://api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas/" + CUIT
+                        + "\": Read timed out"));
+
+        assertThrows(BcraNoDisponibleException.class, () -> service.evaluar(CUIT, INGRESOS));
+
+        assertAll(
+                () -> assertFalse(salida.getAll().contains(CUIT), "el CUIT completo no debe aparecer en el log"),
+                () -> assertTrue(salida.getAll().contains("20-****5678-9")),
+                () -> assertTrue(salida.getAll().contains("ResourceAccessException")));
+    }
+
+    @Test
+    @DisplayName("Un 5xx del BCRA se loguea con su status, sin el cuerpo ni la URL")
+    void errorHttpLogueaSoloElStatus(CapturedOutput salida) {
+        when(bcraClient.obtenerDeudas(CUIT)).thenThrow(
+                HttpServerErrorException.create(HttpStatus.BAD_GATEWAY, "Bad Gateway", null,
+                        ("error para " + CUIT).getBytes(), null));
+
+        assertThrows(BcraNoDisponibleException.class, () -> service.evaluar(CUIT, INGRESOS));
+
+        assertAll(
+                () -> assertFalse(salida.getAll().contains(CUIT)),
+                () -> assertTrue(salida.getAll().contains("HTTP 502")));
+    }
+
+    @ParameterizedTest(name = "situación {0}")
+    @ValueSource(ints = {0, 7, -1})
+    @DisplayName("Situación fuera de 1..6: respuesta inválida del BCRA, 503 (antes terminaba en 500)")
+    void situacionFueraDeRango(int situacion) {
+        when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.of(deudor("202608", 1, situacion)));
+        when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.empty());
+
+        assertThrows(BcraNoDisponibleException.class, () -> service.evaluar(CUIT, INGRESOS));
+    }
+
+    @Test
+    @DisplayName("Situación 6 (la peor válida): se acepta y no califica")
+    void situacionSeisValida() {
+        when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.of(deudor("202608", 6)));
+        when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.empty());
+
+        ValidacionGaranteDTO r = service.evaluar(CUIT, INGRESOS);
+
+        assertAll(
+                () -> assertEquals(6, r.getSituacionCrediticiaBcra()),
+                () -> assertFalse(r.getEsSolvente()));
+    }
+
+    @Test
+    @DisplayName("El CUIT se normaliza con ValidadorCuit: formato con guiones y espacios en los extremos")
+    void normalizaConValidadorCuit() {
+        when(bcraClient.obtenerDeudas(CUIT)).thenReturn(Optional.empty());
+        when(bcraClient.obtenerChequesRechazados(CUIT)).thenReturn(Optional.empty());
+
+        ValidacionGaranteDTO r = service.evaluar(" 20-12345678-9 ", INGRESOS);
+
+        assertEquals(CUIT, r.getCuitCuil());
+        verify(bcraClient).obtenerDeudas(CUIT);
+    }
+
+    @Test
+    @DisplayName("CUIT nulo: 400")
+    void cuitNulo() {
+        assertThrows(OperacionInvalidaException.class, () -> service.evaluar(null, INGRESOS));
     }
 }

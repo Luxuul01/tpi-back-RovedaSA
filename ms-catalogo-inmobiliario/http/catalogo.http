@@ -187,7 +187,8 @@ Content-Type: application/json
   "roles": ["GARANTE"]
 }
 
-### E2. CUIT duplicado (el del propietario) -> 409
+### E2. CUIT duplicado (el del propietario) -> 409 "Ya existe una persona con ese CUIT/CUIL"
+# GARANTE para que no lo frene antes la validación de keycloakUserId (obligatorio para PROPIETARIO e INQUILINO)
 POST {{baseUrl}}/api/personas
 Authorization: Bearer {{tokenAdmin}}
 Content-Type: application/json
@@ -196,7 +197,7 @@ Content-Type: application/json
   "cuitCuil": "20123456786",
   "nombre": "Otro",
   "apellido": "Pérez",
-  "roles": ["INQUILINO"]
+  "roles": ["GARANTE"]
 }
 
 ### E3. Dirección que GeoRef no encuentra (la calle figura como "OSPO TREJO Y SANABRIA") -> 400

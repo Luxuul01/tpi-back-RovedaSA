@@ -8,13 +8,20 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://localhost:8083/realms/rovedasa-realm/protocol/openid-connect/certs
-
+          jwk-set-uri: http://localhost:${KEYCLOAK_PORT:8083}/realms/rovedasa-realm/protocol/openid-connect/certs
+  cloud:
+    gateway:
+      httpclient:
+        # Conexión con los microservicios: si no hay nadie escuchando se corta rápido (503 ApiError)
+        connect-timeout: 3000
+        # Respuesta completa del microservicio. Mayor que los 12 s que contratos espera al catálogo,
+        # para que el error lo informe el servicio que corresponde (504 si se supera)
+        response-timeout: 20s
 
 # Variables personalizadas para inyectar con @Value en GWConfig
 rovedasa-gw:
-  url-microservicio-catalogo: http://localhost:8081
-  url-microservicio-contratos: http://localhost:8082
+  url-microservicio-catalogo: http://localhost:${CATALOGO_PORT:8081}
+  url-microservicio-contratos: http://localhost:${CONTRATOS_PORT:8082}
 
 springdoc:
   swagger-ui:
@@ -27,13 +34,15 @@ springdoc:
 
 logging:
   level:
+    com.rovedasa: INFO
     org.springframework.cloud.gateway: INFO
-    org.springframework.security: DEBUG
+    org.springframework.security: INFO
 
 management:
   endpoints:
     web:
       exposure:
+        # Protegidos en GWConfig: solo health es público; el resto exige ADMINISTRADOR
         include: health,info,metrics,loggers
   endpoint:
     health:

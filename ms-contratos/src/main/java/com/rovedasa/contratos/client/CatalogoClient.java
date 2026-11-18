@@ -1,6 +1,9 @@
 package com.rovedasa.contratos.client;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rovedasa.commons.dto.ActualizarEstadoPropiedadDTO;
+import com.rovedasa.commons.dto.CompensarEstadoPropiedadDTO;
 import com.rovedasa.commons.dto.PropiedadDTO;
 import com.rovedasa.commons.dto.ValidacionGaranteDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
@@ -11,22 +14,32 @@ import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 
 /**
  * Cliente HTTP hacia ms-catálogo-inmobiliario (puerto 8081, directo, no por gateway).
- * Propaga X-Correlation-ID y Authorization Bearer a través del interceptor ya configurado
- * en RestClientConfig (Paso 1).
+ * Propaga X-Correlation-ID y la credencial a través del interceptor configurado en RestClientConfig.
+ *
+ * Traducción de errores del catálogo:
+ * 404 → 404, 400/422 → 400, 409 → 409 (CatalogoConflictoException), 401/403 y otros 4xx → 502
+ * (CatalogoIntegracionException), 5xx o sin respuesta → 503 (CatalogoNoDisponibleException).
+ * Cuando el catálogo manda un ApiError, se reenvía su mensaje.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CatalogoClient {
+
+    private static final ObjectMapper LECTOR_ERRORES = new ObjectMapper();
 
     private final RestClient catalogoRestClient;
 
@@ -39,13 +52,8 @@ public class CatalogoClient {
                 () -> catalogoRestClient.get()
                         .uri("/propiedades/{id}", propiedadId)
                         .retrieve()
-                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                            throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
-                        })
-                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new CatalogoNoDisponibleException(
-                                    "Catálogo no disponible: " + res.getStatusCode());
-                        })
+                        .onStatus(HttpStatusCode::isError,
+                                manejadorDeErrores("Propiedad", propiedadId, "Catálogo no disponible"))
                         .body(PropiedadDTO.class));
     }
 
@@ -58,13 +66,8 @@ public class CatalogoClient {
                 () -> catalogoRestClient.get()
                         .uri("/personas/{id}", personaId)
                         .retrieve()
-                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                            throw traducirError4xx(res.getStatusCode(), "Persona", personaId);
-                        })
-                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new CatalogoNoDisponibleException(
-                                    "Catálogo no disponible: " + res.getStatusCode());
-                        })
+                        .onStatus(HttpStatusCode::isError,
+                                manejadorDeErrores("Persona", personaId, "Catálogo no disponible"))
                         .body(PersonaResumenDTO.class));
     }
 
@@ -73,45 +76,60 @@ public class CatalogoClient {
      * Se invoca en activar(). Si esSolvente es false, el llamador debe rechazar la activación.
      */
     public ValidacionGaranteDTO evaluarGarante(Long garanteId) {
-        return ejecutarLlamada("Garante", garanteId, "BCRA o catálogo no disponible para evaluar garante",
+        String indisponible = "BCRA o catálogo no disponible para evaluar garante";
+        return ejecutarLlamada("Garante", garanteId, indisponible,
                 () -> catalogoRestClient.post()
                         .uri("/personas/{id}/evaluacion-solvencia", garanteId)
                         .retrieve()
-                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                            throw traducirError4xx(res.getStatusCode(), "Garante", garanteId);
-                        })
-                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new CatalogoNoDisponibleException(
-                                    "BCRA o catálogo no disponible para evaluar garante: " + res.getStatusCode());
-                        })
+                        .onStatus(HttpStatusCode::isError, manejadorDeErrores("Garante", garanteId, indisponible))
                         .body(ValidacionGaranteDTO.class));
     }
 
     /**
-     * PATCH /api/propiedades/{id}/estado
-     * Body: ActualizarEstadoPropiedadDTO (nuevoEstado, inquilinoId, garanteId).
+     * PATCH /api/propiedades/{id}/estado con estado esperado (contrato 1 entre servicios, body
+     * ActualizarEstadoPropiedadDTO de commons; los campos nulos no se envían).
+     * Si la propiedad no está en {@code estadoEsperado}, el catálogo responde 409 y no la cambia.
      * Usado para: RESERVADA (seña), ALQUILADA (activar), DISPONIBLE (cancelar/rescindir/finalizar).
      */
     public PropiedadDTO actualizarEstadoPropiedad(Long propiedadId, EstadoPropiedadEnum nuevoEstado,
+                                                  EstadoPropiedadEnum estadoEsperado,
                                                   Long inquilinoId, Long garanteId) {
         ActualizarEstadoPropiedadDTO body = ActualizarEstadoPropiedadDTO.builder()
-                .nuevoEstado(nuevoEstado)
-                .inquilinoId(inquilinoId)
-                .garanteId(garanteId)
+                .nuevoEstado(nuevoEstado).estadoEsperado(estadoEsperado)
+                .inquilinoId(inquilinoId).garanteId(garanteId)
                 .build();
-
-        return ejecutarLlamada("Propiedad", propiedadId, "Catálogo no disponible al cambiar estado de propiedad",
+        String indisponible = "Catálogo no disponible al cambiar estado de propiedad";
+        return ejecutarLlamada("Propiedad", propiedadId, indisponible,
                 () -> catalogoRestClient.patch()
                         .uri("/propiedades/{id}/estado", propiedadId)
                         .body(body)
                         .retrieve()
-                        .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                            throw traducirError4xx(res.getStatusCode(), "Propiedad", propiedadId);
-                        })
-                        .onStatus(HttpStatusCode::is5xxServerError, (req, res) -> {
-                            throw new CatalogoNoDisponibleException(
-                                    "Catálogo no disponible al cambiar estado: " + res.getStatusCode());
-                        })
+                        .onStatus(HttpStatusCode::isError, manejadorDeErrores("Propiedad", propiedadId, indisponible))
+                        .body(PropiedadDTO.class));
+    }
+
+    /**
+     * PATCH /api/propiedades/{id}/estado/compensacion (contrato 2 entre servicios, body
+     * CompensarEstadoPropiedadDTO de commons): deshace una transición
+     * de la Saga, de {@code estadoActual} a {@code estadoAnterior}. 409 si la propiedad ya no está en
+     * estadoActual; 400 si el par no es el inverso de una transición válida (RN-05).
+     * Para volver a ALQUILADA o a RESERVADA desde DISPONIBLE el catálogo necesita el inquilino (y el garante),
+     * porque al liberarla los borró; en las demás compensaciones van null y no se envían.
+     */
+    public PropiedadDTO compensarEstadoPropiedad(Long propiedadId, EstadoPropiedadEnum estadoActual,
+                                                 EstadoPropiedadEnum estadoAnterior,
+                                                 Long inquilinoId, Long garanteId) {
+        CompensarEstadoPropiedadDTO body = CompensarEstadoPropiedadDTO.builder()
+                .estadoActual(estadoActual).estadoAnterior(estadoAnterior)
+                .inquilinoId(inquilinoId).garanteId(garanteId)
+                .build();
+        String indisponible = "Catálogo no disponible al compensar el estado de la propiedad";
+        return ejecutarLlamada("Propiedad", propiedadId, indisponible,
+                () -> catalogoRestClient.patch()
+                        .uri("/propiedades/{id}/estado/compensacion", propiedadId)
+                        .body(body)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::isError, manejadorDeErrores("Propiedad", propiedadId, indisponible))
                         .body(PropiedadDTO.class));
     }
 
@@ -120,30 +138,67 @@ public class CatalogoClient {
             return llamada.get();
         } catch (RestClientResponseException e) {
             log.error("Error HTTP desde catálogo para {} {}: {} {}", recurso, id, e.getStatusCode(), e.getStatusText());
-            if (e.getStatusCode().is4xxClientError()) {
-                throw traducirError4xx(e.getStatusCode(), recurso, id);
-            }
-            throw new CatalogoNoDisponibleException(mensajeIndisponible, e);
+            throw traducirError(e.getStatusCode(), extraerMensaje(e.getResponseBodyAsString()),
+                    recurso, id, mensajeIndisponible);
         } catch (RestClientException e) {
             log.error("Error de comunicación con catálogo para {} {}: {}", recurso, id, e.getMessage());
             throw new CatalogoNoDisponibleException(mensajeIndisponible, e);
         }
     }
 
-    /**
-     * Traduce un 4xx del catálogo a las excepciones de negocio compartidas:
-     * 404 -> RecursoNoEncontradoException (HTTP 404), 400/409/422 -> OperacionInvalidaException (HTTP 400).
-     */
-    private static RuntimeException traducirError4xx(HttpStatusCode status, String recurso, Long id) {
-        if (status.value() == 404) {
-            return new RecursoNoEncontradoException(
-                    recurso + " con ID " + id + " no fue encontrado en el catálogo");
+    private static RestClient.ResponseSpec.ErrorHandler manejadorDeErrores(String recurso, Long id,
+                                                                            String mensajeIndisponible) {
+        return (request, response) -> {
+            log.warn("El catálogo respondió {} para {} {}", response.getStatusCode(), recurso, id);
+            throw traducirError(response.getStatusCode(), leerMensaje(response), recurso, id, mensajeIndisponible);
+        };
+    }
+
+    /** Traduce el estado HTTP del catálogo a la excepción que da la respuesta correcta en ms-contratos. */
+    static RuntimeException traducirError(HttpStatusCode status, String mensajeCatalogo, String recurso, Long id,
+                                          String mensajeIndisponible) {
+        String detalle = mensajeCatalogo != null ? mensajeCatalogo : status.toString();
+        int codigo = status.value();
+        if (codigo == 404) {
+            return new RecursoNoEncontradoException(recurso + " con ID " + id + " no fue encontrado en el catálogo");
         }
-        if (status.value() == 400 || status.value() == 409 || status.value() == 422) {
+        if (codigo == 400 || codigo == 422) {
             return new OperacionInvalidaException(
-                    "El catálogo rechazó la operación sobre " + recurso + " con ID " + id + ": " + status);
+                    "El catálogo rechazó la operación sobre " + recurso + " con ID " + id + ": " + detalle);
         }
-        return new CatalogoNoDisponibleException(
-                "El catálogo rechazó la solicitud sobre " + recurso + " con ID " + id + ": " + status);
+        if (codigo == 409) {
+            return new CatalogoConflictoException(
+                    "Conflicto en el catálogo sobre " + recurso + " con ID " + id + ": " + detalle);
+        }
+        if (codigo == 401 || codigo == 403) {
+            return new CatalogoIntegracionException("El catálogo rechazó la credencial del servicio (HTTP " + codigo
+                    + ") al operar sobre " + recurso + " con ID " + id);
+        }
+        if (status.is4xxClientError()) {
+            return new CatalogoIntegracionException("Respuesta inesperada del catálogo (HTTP " + codigo
+                    + ") al operar sobre " + recurso + " con ID " + id + ": " + detalle);
+        }
+        return new CatalogoNoDisponibleException(mensajeIndisponible + ": " + detalle);
+    }
+
+    private static String leerMensaje(ClientHttpResponse response) {
+        try (InputStream cuerpo = response.getBody()) {
+            return extraerMensaje(new String(cuerpo.readAllBytes(), StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Campo "message" del ApiError del catálogo, si el cuerpo lo trae. */
+    private static String extraerMensaje(String cuerpo) {
+        if (cuerpo == null || cuerpo.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode mensaje = LECTOR_ERRORES.readTree(cuerpo).get("message");
+            return mensaje != null && mensaje.isTextual() && !mensaje.asText().isBlank() ? mensaje.asText() : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 }

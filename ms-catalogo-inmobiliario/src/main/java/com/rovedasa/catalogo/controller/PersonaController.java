@@ -44,7 +44,21 @@ public class PersonaController {
     private final PersonaService personaService;
     private final EvaluacionGaranteService evaluacionGaranteService;
 
-    @Operation(summary = "Registrar una persona con sus roles de negocio")
+    @Operation(summary = "Registrar una persona con sus roles de negocio",
+            description = "El CUIT/CUIL va como 11 dígitos o con guiones (XX-XXXXXXXX-X) y tiene que tener un dígito "
+                    + "verificador válido (RN-01). keycloakUserId es el UUID del usuario en Keycloak: obligatorio si "
+                    + "los roles incluyen PROPIETARIO o INQUILINO (RN-17), opcional para un GARANTE.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Persona creada; Location apunta a /api/personas/{id}"),
+            @ApiResponse(responseCode = "400", description = "Datos inválidos: CUIT/CUIL, email, roles o keycloakUserId",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "Ya existe una persona con ese CUIT/CUIL, email o usuario "
+                    + "de Keycloak", content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     @PostMapping
     public ResponseEntity<PersonaResponse> registrar(@Valid @RequestBody CrearPersonaRequest solicitud) {
         PersonaResponse creada = personaService.registrar(solicitud);
@@ -67,7 +81,20 @@ public class PersonaController {
         return new PagedModel<>(personaService.listar(rol, paginacion));
     }
 
-    @Operation(summary = "Agregar un rol de negocio a una persona (idempotente)")
+    @Operation(summary = "Agregar un rol de negocio a una persona (idempotente)",
+            description = "PROPIETARIO e INQUILINO solo se pueden agregar a una persona vinculada a un usuario de "
+                    + "Keycloak (RN-17).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Persona con sus roles actualizados"),
+            @ApiResponse(responseCode = "400", description = "Rol inválido, o PROPIETARIO/INQUILINO para una persona "
+                    + "sin keycloakUserId", content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "No existe la persona",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     @PatchMapping("/{id}/roles")
     public PersonaResponse agregarRol(@PathVariable("id") Long id, @Valid @RequestBody AgregarRolRequest solicitud) {
         return personaService.agregarRol(id, solicitud.rol());

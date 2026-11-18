@@ -9,6 +9,7 @@ import com.rovedasa.catalogo.model.enums.TipoPersonaEnum;
 import com.rovedasa.catalogo.repository.PersonaRepository;
 import com.rovedasa.catalogo.util.NormalizadorTexto;
 import com.rovedasa.catalogo.validation.ValidadorCuit;
+import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,14 +37,18 @@ public class PersonaService {
         String keycloakUserId = NormalizadorTexto.limpiarOpcional(solicitud.keycloakUserId());
         String email = normalizarEmail(solicitud.email());
 
+        // B4: el mensaje de la excepción lo loguea el handler y lo ve el cliente, así que no lleva el dato;
+        // el log de acá lo lleva enmascarado para poder rastrear el intento
         if (personaRepository.existsByCuitCuil(cuitCuil)) {
-            throw new RecursoDuplicadoException("Ya existe una persona con CUIT/CUIL " + cuitCuil);
+            log.warn("Alta rechazada: ya existe una persona con CUIT/CUIL {}", ValidadorCuit.enmascarar(cuitCuil));
+            throw new RecursoDuplicadoException("Ya existe una persona con ese CUIT/CUIL");
         }
         if (keycloakUserId != null && personaRepository.existsByKeycloakUserId(keycloakUserId)) {
             throw new RecursoDuplicadoException("Ya existe una persona vinculada al usuario de Keycloak " + keycloakUserId);
         }
         if (email != null && personaRepository.existsByEmail(email)) {
-            throw new RecursoDuplicadoException("Ya existe una persona con el email " + email);
+            log.warn("Alta rechazada: ya existe una persona con el email {}", enmascararEmail(email));
+            throw new RecursoDuplicadoException("Ya existe una persona con ese email");
         }
 
         Persona persona = Persona.builder()
@@ -76,16 +81,24 @@ public class PersonaService {
         return personas.map(PersonaMapper::aResponse);
     }
 
-    // Idempotente: si la persona ya tiene el rol, no hace nada y devuelve el estado actual
+    /**
+     * Idempotente: si la persona ya tiene el rol, no hace nada y devuelve el estado actual.
+     * RN-17: PROPIETARIO e INQUILINO exigen que la persona esté vinculada a su usuario de Keycloak.
+     */
     @Transactional
     public PersonaResponse agregarRol(Long id, TipoPersonaEnum rol) {
         Persona persona = buscar(id);
         if (persona.tieneRol(rol)) {
             log.debug("La persona ID: {} ya tenía el rol {}: no se modifica", id, rol);
-        } else {
-            persona.agregarRol(rol);
-            log.info("Rol {} agregado a la persona ID: {}", rol, id);
+            return PersonaMapper.aResponse(persona);
         }
+        if (rol.requiereUsuarioKeycloak() && persona.getKeycloakUserId() == null) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede agregar el rol %s a la persona ID %d: no está vinculada a un usuario de Keycloak "
+                            + "(keycloakUserId) y sin él no podría ver sus propiedades ni sus contratos", rol, id));
+        }
+        persona.agregarRol(rol);
+        log.info("Rol {} agregado a la persona ID: {}", rol, id);
         return PersonaMapper.aResponse(persona);
     }
 
@@ -98,5 +111,14 @@ public class PersonaService {
     private static String normalizarEmail(String email) {
         String limpio = NormalizadorTexto.limpiarOpcional(email);
         return limpio != null ? limpio.toLowerCase(Locale.ROOT) : null;
+    }
+
+    // Para logs (dato personal): "juan.perez@mail.com" -> "j***@mail.com"
+    static String enmascararEmail(String email) {
+        int arroba = email.indexOf('@');
+        if (arroba <= 0) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(arroba);
     }
 }

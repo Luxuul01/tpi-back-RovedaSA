@@ -71,7 +71,7 @@ class EstadoContratoTest {
         LocalDate hoy = LocalDate.of(2026, 7, 1);
 
         assertThrows(OperacionInvalidaException.class, () -> estado.activar(contratoBase, hoy));
-        assertThrows(OperacionInvalidaException.class, () -> estado.rescindir(contratoBase, hoy));
+        assertThrows(OperacionInvalidaException.class, () -> estado.rescindir(contratoBase, hoy, hoy));
         assertThrows(OperacionInvalidaException.class, () -> estado.finalizar(contratoBase, hoy));
         assertThrows(OperacionInvalidaException.class, () -> estado.aplicarAjuste(contratoBase, Ajuste.builder().build()));
     }
@@ -194,7 +194,7 @@ class EstadoContratoTest {
         // Simular que la cuota 1 (2026-07-10) ya venció pero rescinde el 2026-07-15 (cuotas 2 y 3 son futuras)
         LocalDate fechaRescision = LocalDate.of(2026, 7, 15);
 
-        BigDecimal multa = factory.obtenerEstado(contratoBase).rescindir(contratoBase, fechaRescision);
+        BigDecimal multa = factory.obtenerEstado(contratoBase).rescindir(contratoBase, fechaRescision, fechaRescision);
 
         assertEquals(EstadoContratoEnum.RESCINDIDO, contratoBase.getEstado());
         assertEquals(new BigDecimal("750000.00"), multa);
@@ -210,7 +210,7 @@ class EstadoContratoTest {
         activarContratoDePrueba();
         LocalDate fechaRescision = LocalDate.of(2027, 1, 15); // 6 meses cumplidos desde 2026-07-01
 
-        BigDecimal multa = factory.obtenerEstado(contratoBase).rescindir(contratoBase, fechaRescision);
+        BigDecimal multa = factory.obtenerEstado(contratoBase).rescindir(contratoBase, fechaRescision, fechaRescision);
 
         assertEquals(EstadoContratoEnum.RESCINDIDO, contratoBase.getEstado());
         assertEquals(new BigDecimal("500000.00"), multa);
@@ -233,11 +233,11 @@ class EstadoContratoTest {
     @DisplayName("Estados terminales (CANCELADO, RESCINDIDO, FINALIZADO) rechazan cualquier operación posterior")
     void estadosTerminalesDebenRechazarTodaOperacion() {
         activarContratoDePrueba();
-        factory.obtenerEstado(contratoBase).rescindir(contratoBase, LocalDate.of(2026, 8, 1));
+        factory.obtenerEstado(contratoBase).rescindir(contratoBase, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1));
 
         EstadoContrato estadoRescindido = factory.obtenerEstado(contratoBase);
         assertThrows(OperacionInvalidaException.class,
-                () -> estadoRescindido.rescindir(contratoBase, LocalDate.of(2026, 8, 2)));
+                () -> estadoRescindido.rescindir(contratoBase, LocalDate.of(2026, 8, 2), LocalDate.of(2026, 8, 2)));
         assertThrows(OperacionInvalidaException.class,
                 () -> estadoRescindido.finalizar(contratoBase, LocalDate.of(2028, 7, 1)));
     }
@@ -335,6 +335,273 @@ class EstadoContratoTest {
         assertEquals(9, contratoBase.getCuotas().size());
         assertEquals(7, nuevasCuotas.get(0).getNroCuota());
         assertEquals(LocalDate.of(2027, 1, 10), nuevasCuotas.get(0).getFechaVencimiento());
+    }
+
+    // ------------------------------------------------------------------
+    // Ajustes: hitos H_k, ventana y validación de fechas
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("ACTIVO: un ajuste sin fechas toma la ventana del período (H0 a H1) y la guarda en el ajuste")
+    void ajusteSinFechasTomaLaVentanaDelPeriodo() {
+        activarContratoDePrueba();
+        Ajuste ajuste = ajuste(LocalDate.of(2026, 11, 17), null, null, "625000.00");
+
+        List<Cuota> nuevas = factory.obtenerEstado(contratoBase).aplicarAjuste(contratoBase, ajuste);
+
+        assertEquals(LocalDate.of(2026, 7, 1), ajuste.getFechaIndiceDesde());
+        assertEquals(LocalDate.of(2026, 10, 1), ajuste.getFechaIndiceHasta());
+        assertEquals(List.of(4, 5, 6), nuevas.stream().map(Cuota::getNroCuota).toList());
+        assertEquals(LocalDate.of(2026, 10, 10), nuevas.get(0).getFechaVencimiento());
+    }
+
+    @Test
+    @DisplayName("ACTIVO: rechaza fechas que no coinciden con la ventana e indica las que corresponden")
+    void ajusteConFechasQueNoCoincidenSeRechaza() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> activo.validarAjuste(contratoBase, LocalDate.of(2026, 11, 17),
+                        LocalDate.of(2026, 7, 15), LocalDate.of(2026, 10, 15)));
+
+        assertTrue(ex.getMessage().contains("2026-07-01"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("2026-10-01"), ex.getMessage());
+        assertTrue(contratoBase.getAjustes().isEmpty());
+    }
+
+    @Test
+    @DisplayName("ACTIVO: el hito es el período, no el día en que se ejecutó el ajuste anterior")
+    void elHitoDelSegundoAjusteNoDependeDeCuandoSeAplicoElPrimero() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+        // El primer ajuste se aplicó tarde (el 20/12), pero el segundo igual corresponde desde el 01/01
+        activo.aplicarAjuste(contratoBase, ajuste(LocalDate.of(2026, 12, 20), null, null, "625000.00"));
+
+        PeriodoAjuste segundo = activo.validarAjuste(contratoBase, LocalDate.of(2027, 1, 1), null, null);
+
+        assertEquals(new PeriodoAjuste(2, LocalDate.of(2026, 10, 1), LocalDate.of(2027, 1, 1)), segundo);
+    }
+
+    @Test
+    @DisplayName("ACTIVO: no hay ajuste cuyo hito caiga en la fecha de fin o después")
+    void noHayAjusteEnLaFechaDeFin() {
+        contratoBase.setFechaFin(LocalDate.of(2026, 10, 1));
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        assertTrue(activo.ajustePendiente(contratoBase, LocalDate.of(2026, 10, 1)).isEmpty());
+        assertThrows(OperacionInvalidaException.class,
+                () -> activo.validarAjuste(contratoBase, LocalDate.of(2026, 10, 1), null, null));
+    }
+
+    @Test
+    @DisplayName("Solo ACTIVO informa ajustes pendientes; los demás estados no")
+    void soloActivoTieneAjustesPendientes() {
+        LocalDate muyTarde = LocalDate.of(2027, 6, 1);
+        assertTrue(factory.obtenerEstado(contratoBase).ajustePendiente(contratoBase, muyTarde).isEmpty());
+        activarContratoDePrueba();
+        assertEquals(1, factory.obtenerEstado(contratoBase).ajustePendiente(contratoBase, muyTarde).orElseThrow().numero());
+    }
+
+    // ------------------------------------------------------------------
+    // Cuotas con fechas no "felices": inicio día 17 y día 31
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Activar con inicio el 17/11 y vencimiento día 10: la primera cuota vence el 10/12, no nace vencida")
+    void activarConInicioDia17NoGeneraCuotasVencidas() {
+        contratoBase.setFechaInicio(LocalDate.of(2026, 11, 17));
+        contratoBase.setFechaFin(LocalDate.of(2028, 11, 17));
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+
+        List<Cuota> cuotas = factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 11, 17));
+
+        assertEquals(3, cuotas.size());
+        assertEquals(LocalDate.of(2026, 12, 10), cuotas.get(0).getFechaVencimiento());
+        assertEquals(LocalDate.of(2027, 1, 10), cuotas.get(1).getFechaVencimiento());
+        assertEquals(LocalDate.of(2027, 2, 10), cuotas.get(2).getFechaVencimiento());
+        assertEquals(11, cuotas.get(0).getPeriodoMes());
+        assertFalse(cuotas.get(0).getFechaVencimiento().isBefore(contratoBase.getFechaInicio()));
+    }
+
+    @Test
+    @DisplayName("Inicio el 31/01 con vencimiento día 31: las cuotas vencen 31/01, 28/02 y 31/03 (sin correrse al 28)")
+    void activarConInicioDia31RespetaElFinDeMes() {
+        contratoBase.setFechaInicio(LocalDate.of(2026, 1, 31));
+        contratoBase.setFechaFin(LocalDate.of(2027, 1, 31));
+        contratoBase.setDiaVencimientoMes(31);
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+
+        List<Cuota> cuotas = factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 1, 31));
+
+        assertEquals(LocalDate.of(2026, 1, 31), cuotas.get(0).getFechaVencimiento());
+        assertEquals(LocalDate.of(2026, 2, 28), cuotas.get(1).getFechaVencimiento());
+        assertEquals(LocalDate.of(2026, 3, 31), cuotas.get(2).getFechaVencimiento());
+
+        // El ajuste 1 (hito 30/04: 31/01 + 3 meses) emite abril, mayo y junio con vencimiento el último día
+        List<Cuota> tramo1 = factory.obtenerEstado(contratoBase)
+                .aplicarAjuste(contratoBase, ajuste(LocalDate.of(2026, 4, 30), null, null, "550000.00"));
+        assertEquals(LocalDate.of(2026, 4, 30), contratoBase.getAjustes().get(0).getFechaIndiceHasta());
+        assertEquals(LocalDate.of(2026, 4, 30), tramo1.get(0).getFechaVencimiento());
+        assertEquals(LocalDate.of(2026, 5, 31), tramo1.get(1).getFechaVencimiento());
+        assertEquals(LocalDate.of(2026, 6, 30), tramo1.get(2).getFechaVencimiento());
+    }
+
+    // ------------------------------------------------------------------
+    // Rescisión y finalización
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Rescindir: rechaza una fecha posterior a la de fin (antes cobraba 1 canon en 2030)")
+    void rescisionPosteriorALaFechaDeFinSeRechaza() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2030, 1, 1), LocalDate.of(2026, 7, 17)));
+        assertEquals(EstadoContratoEnum.ACTIVO, contratoBase.getEstado());
+    }
+
+    @Test
+    @DisplayName("Rescindir: rechaza una fecha futura (libera la propiedad en el acto) o anterior al inicio")
+    void rescisionFuturaOAnteriorAlInicioSeRechaza() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException futura = assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2026, 7, 18), LocalDate.of(2026, 7, 17)));
+        assertTrue(futura.getMessage().contains("entre el 2026-07-01 (inicio) y el 2026-07-17 (hoy)"), futura.getMessage());
+        assertTrue(futura.getMessage().contains("no puede ser futura"), futura.getMessage());
+        assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 17)));
+        assertEquals(EstadoContratoEnum.ACTIVO, contratoBase.getEstado());
+    }
+
+    @Test
+    @DisplayName("Rescindir con una fecha pasada (entre el inicio y hoy) es válido y anula las cuotas que vencen después")
+    void rescisionConFechaPasadaEsValida() {
+        activarContratoDePrueba();
+
+        // Hoy 20/08; se rescinde con fecha 05/08: la cuota del 10/07 queda, las del 10/08 y 10/09 se anulan
+        BigDecimal multa = factory.obtenerEstado(contratoBase)
+                .rescindir(contratoBase, LocalDate.of(2026, 8, 5), LocalDate.of(2026, 8, 20));
+
+        assertEquals(new BigDecimal("750000.00"), multa);
+        assertEquals(LocalDate.of(2026, 8, 5), contratoBase.getFechaRescision());
+        assertEquals(EstadoCuotaEnum.PENDIENTE, contratoBase.getCuotas().get(0).getEstado());
+        assertEquals(EstadoCuotaEnum.ANULADA, contratoBase.getCuotas().get(1).getEstado());
+        assertEquals(EstadoCuotaEnum.ANULADA, contratoBase.getCuotas().get(2).getEstado());
+    }
+
+    @Test
+    @DisplayName("Rescindir después de la fecha de fin: el último día válido es la fecha de fin")
+    void rescisionDespuesDelFinTopeaEnLaFechaDeFin() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2028, 7, 2), LocalDate.of(2028, 8, 1)));
+        assertTrue(ex.getMessage().contains("y el 2028-07-01 (fecha de fin)"), ex.getMessage());
+        assertEquals(new BigDecimal("500000.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2028, 7, 1), LocalDate.of(2028, 8, 1)));
+    }
+
+    @Test
+    @DisplayName("Rescindir un contrato que todavía no empezó: 400 con la fecha de inicio")
+    void rescisionAntesDelInicioDelContrato() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2026, 6, 24), LocalDate.of(2026, 6, 24)));
+        assertTrue(ex.getMessage().contains("antes de su fecha de inicio (2026-07-01)"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Finalizar no anula cuotas devengadas: 01/12 -> 20/12 con día 25, la cuota del 25/12 queda PENDIENTE")
+    void finalizarNoAnulaCuotasCuyoPeriodoEmpezoAntesDelFin() {
+        contratoBase.setFechaInicio(LocalDate.of(2026, 12, 1));
+        contratoBase.setFechaFin(LocalDate.of(2026, 12, 20));
+        contratoBase.setFrecuenciaAjusteMeses(1);
+        contratoBase.setDiaVencimientoMes(25);
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+        List<Cuota> cuotas = factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 12, 1));
+        assertEquals(1, cuotas.size());
+        assertEquals(LocalDate.of(2026, 12, 25), cuotas.get(0).getFechaVencimiento());
+
+        factory.obtenerEstado(contratoBase).finalizar(contratoBase, LocalDate.of(2026, 12, 20));
+
+        assertEquals(EstadoContratoEnum.FINALIZADO, contratoBase.getEstado());
+        assertEquals(EstadoCuotaEnum.PENDIENTE, cuotas.get(0).getEstado());
+    }
+
+    @Test
+    @DisplayName("Finalizar: el último período (17/11/2027 -> 20/11/2027) empezó antes del fin y su cuota no se anula")
+    void finalizarConservaElUltimoPeriodo() {
+        // 17/11/2026 -> 20/11/2027: 13 meses; el último período (17/11/2027) vence el 10/12/2027
+        contratoBase.setFechaInicio(LocalDate.of(2026, 11, 17));
+        contratoBase.setFechaFin(LocalDate.of(2027, 11, 20));
+        contratoBase.setFrecuenciaAjusteMeses(13);
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+        List<Cuota> cuotas = factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 11, 17));
+        assertEquals(13, cuotas.size());
+
+        factory.obtenerEstado(contratoBase).finalizar(contratoBase, LocalDate.of(2027, 11, 20));
+
+        assertEquals(EstadoContratoEnum.FINALIZADO, contratoBase.getEstado());
+        assertTrue(cuotas.stream().allMatch(c -> c.getEstado() == EstadoCuotaEnum.PENDIENTE));
+    }
+
+    @Test
+    @DisplayName("Finalizar (defensa): anula una cuota PENDIENTE cuyo período empieza en o después de la fecha de fin")
+    void finalizarAnulaCuotasDePeriodosPosterioresAlFin() {
+        contratoBase.setFechaInicio(LocalDate.of(2026, 12, 1));
+        contratoBase.setFechaFin(LocalDate.of(2026, 12, 20));
+        contratoBase.setFrecuenciaAjusteMeses(1);
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+        factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 12, 1));
+        // Cuota 2 (período desde el 01/01/2027, después del fin): no la genera el sistema, viene de datos viejos
+        Cuota sobrante = Cuota.builder().nroCuota(2).periodoMes(1).periodoAnio(2027)
+                .fechaVencimiento(LocalDate.of(2027, 1, 10)).montoBase(new BigDecimal("500000.00"))
+                .estado(EstadoCuotaEnum.PENDIENTE).build();
+        contratoBase.agregarCuota(sobrante);
+
+        factory.obtenerEstado(contratoBase).finalizar(contratoBase, LocalDate.of(2026, 12, 20));
+
+        assertEquals(EstadoCuotaEnum.PENDIENTE, contratoBase.getCuotas().get(0).getEstado());
+        assertEquals(EstadoCuotaEnum.ANULADA, sobrante.getEstado());
+    }
+
+    @Test
+    @DisplayName("Las cuotas llevan como fecha de emisión la fecha actual de la activación o del ajuste")
+    void lasCuotasLlevanLaFechaDeEmision() {
+        activarContratoDePrueba();
+        assertTrue(contratoBase.getCuotas().stream()
+                .allMatch(c -> LocalDate.of(2026, 6, 24).equals(c.getFechaEmision())));
+
+        // El ajuste 1 se aplica tarde (el 15/11): sus cuotas (10/10, 10/11, 10/12) nacen el 15/11
+        List<Cuota> tramo1 = factory.obtenerEstado(contratoBase)
+                .aplicarAjuste(contratoBase, ajuste(LocalDate.of(2026, 11, 15), null, null, "625000.00"));
+        assertEquals(3, tramo1.size());
+        assertTrue(tramo1.stream().allMatch(c -> LocalDate.of(2026, 11, 15).equals(c.getFechaEmision())));
+        assertEquals(new BigDecimal("0.00"), tramo1.get(0).calcularMora(LocalDate.of(2026, 11, 15), new BigDecimal("0.1")));
+    }
+
+    private static Ajuste ajuste(LocalDate fechaAplicacion, LocalDate desde, LocalDate hasta, String montoNuevo) {
+        return Ajuste.builder()
+                .tipoIndice(TipoIndiceEnum.ICL)
+                .fechaAplicacion(fechaAplicacion)
+                .fechaIndiceDesde(desde)
+                .fechaIndiceHasta(hasta)
+                .valorIndiceDesde(new BigDecimal("10"))
+                .valorIndiceHasta(new BigDecimal("11"))
+                .coeficiente(new BigDecimal("1.1"))
+                .montoAnterior(new BigDecimal("500000.00"))
+                .montoNuevo(new BigDecimal(montoNuevo))
+                .porcentajeVariacion(new BigDecimal("10"))
+                .origen(OrigenDatoEnum.BCRA)
+                .build();
     }
 
     private void activarContratoDePrueba() {

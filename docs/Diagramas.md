@@ -350,8 +350,8 @@ Rel(inquilino, api_gateway, "Consulta su información (solo GET)", "HTTPS / REST
 Rel(admin, grafana, "Consulta logs", "HTTP")
 
 Rel(api_gateway, keycloak, "Obtiene claves públicas para validar tokens", "HTTPS / JWKS")
-Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/~*~* y /api/personas/~*~*", "HTTP / REST + TokenRelay")
-Rel(api_gateway, ms_contratos, "Enruta /api/contratos/~*~* y /api/cuotas/~*~*", "HTTP / REST + TokenRelay")
+Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/~*~* y /api/personas/~*~*", "HTTP / REST + Authorization del cliente")
+Rel(api_gateway, ms_contratos, "Enruta /api/contratos/~*~* y /api/cuotas/~*~*", "HTTP / REST + Authorization del cliente")
 
 Rel(ms_contratos, ms_catalogo, "Consulta propiedad y solvencia del garante, cambia estado de ocupación", "HTTP / REST (RestClient)")
 Rel(ms_contratos, keycloak, "Obtiene token de servicio", "OAuth2 Client Credentials")

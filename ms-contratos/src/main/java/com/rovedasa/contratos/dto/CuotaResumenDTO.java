@@ -24,6 +24,8 @@ public class CuotaResumenDTO {
     private Integer periodoMes;
     private Integer periodoAnio;
     private LocalDate fechaVencimiento;
+    /** Fecha en que se generó la cuota; la mora corre desde max(fechaVencimiento, fechaEmision). Null en datos viejos. */
+    private LocalDate fechaEmision;
     private BigDecimal montoBase;
     private BigDecimal montoMora;
     private BigDecimal montoTotal;

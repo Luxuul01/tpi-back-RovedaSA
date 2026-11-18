@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Reglas de RN-07 para que una persona califique como garante solvente:
  *
- *   1. situacionCrediticia <= 2   (1 = normal, 2 = riesgo bajo; 3 a 5 rechaza)
+ *   1. situacionCrediticia <= 2   (1 = normal, 2 = riesgo bajo; 3 a 6 rechaza)
  *   2. chequesRechazados == 0
  *
  * No depende del BCRA ni de la base: recibe los datos ya obtenidos y decide.

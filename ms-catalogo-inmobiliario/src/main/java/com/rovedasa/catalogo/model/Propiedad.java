@@ -280,6 +280,30 @@ public class Propiedad {
         this.estado = EstadoPropiedadEnum.DISPONIBLE;
     }
 
+    /*
+     * Compensaciones de la Saga de ms-contratos: deshacen una transición ya confirmada cuando ms-contratos
+     * no pudo guardar su parte. Las otras dos (deshacer una reserva o una liberación desde RESERVADA) se
+     * resuelven con liberar() y reservar().
+     */
+
+    // ALQUILADA -> RESERVADA: deshace la activación del contrato. Conserva inquilino y garante.
+    public void revertirAlquiler() {
+        validarEstadoActual("revertir el alquiler de", EstadoPropiedadEnum.ALQUILADA);
+        this.estado = EstadoPropiedadEnum.RESERVADA;
+    }
+
+    // DISPONIBLE -> ALQUILADA: deshace una rescisión o finalización. Exige el inquilino que liberar() desvinculó.
+    public void restaurarAlquiler(Persona inquilino, Persona garante) {
+        validarEstadoActual("restaurar el alquiler de", EstadoPropiedadEnum.DISPONIBLE);
+        if (inquilino == null) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede restaurar el alquiler de la propiedad %s sin el inquilino (inquilinoId)", codigo));
+        }
+        this.inquilino = inquilino;
+        this.garante = garante;
+        this.estado = EstadoPropiedadEnum.ALQUILADA;
+    }
+
     // DISPONIBLE -> INACTIVA
     public void inactivar() {
         validarEstadoActual("inactivar", EstadoPropiedadEnum.DISPONIBLE);
