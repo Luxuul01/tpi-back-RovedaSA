@@ -1,6 +1,7 @@
 package com.rovedasa.catalogo.dto;
 
 import com.rovedasa.catalogo.model.enums.TipologiaEnum;
+import com.rovedasa.catalogo.validation.AlturaValida;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -13,7 +14,8 @@ import java.math.BigDecimal;
 public record CrearPropiedadRequest(
         @NotNull TipologiaEnum tipologia,
         @NotBlank @Size(max = 255) String calle,
-        @NotBlank @Size(max = 20) String numero,
+        // Altura de la calle: entero positivo (GeoRef la necesita para ubicar la propiedad, RN-03)
+        @NotBlank @Size(max = 20) @AlturaValida String numero,
         @Size(max = 10) String piso,
         @Size(max = 10) String departamento,
         @Size(max = 255) String barrio,

@@ -15,6 +15,8 @@ record RespuestaDireccionesGeoRef(Integer cantidad, List<DireccionGeoRef> direcc
     @JsonIgnoreProperties(ignoreUnknown = true)
     record DireccionGeoRef(
             String nomenclatura,
+            // Sin valor cuando GeoRef ubicó solo la calle, sin la altura pedida (ej. "INDEPENDENCIA 0")
+            AlturaGeoRef altura,
             EntidadGeoRef provincia,
             EntidadGeoRef departamento,
             @JsonProperty("localidad_censal") EntidadGeoRef localidadCensal,
@@ -27,5 +29,9 @@ record RespuestaDireccionesGeoRef(Integer cantidad, List<DireccionGeoRef> direcc
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record UbicacionGeoRef(Double lat, Double lon) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AlturaGeoRef(Integer valor) {
     }
 }

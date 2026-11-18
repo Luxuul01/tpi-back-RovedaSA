@@ -3,6 +3,7 @@ package com.rovedasa.catalogo.dto;
 import com.rovedasa.catalogo.model.enums.TipoPersonaEnum;
 import com.rovedasa.catalogo.validation.CuitValido;
 import com.rovedasa.catalogo.validation.KeycloakUserIdSegunRoles;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -25,5 +26,8 @@ public record CrearPersonaRequest(
         // UUID del usuario en Keycloak (claim sub). Los garantes no tienen usuario
         @Size(max = 255) String keycloakUserId,
         @NotEmpty Set<@NotNull TipoPersonaEnum> roles,
-        @PositiveOrZero BigDecimal ingresosMensualesDeclarados) {
+        // Columna NUMERIC(15,2): sin @Digits un valor más grande llegaba a la base
+        @PositiveOrZero @Digits(integer = 13, fraction = 2,
+                message = "Los ingresos mensuales declarados admiten como máximo 13 dígitos enteros y 2 decimales")
+        BigDecimal ingresosMensualesDeclarados) {
 }

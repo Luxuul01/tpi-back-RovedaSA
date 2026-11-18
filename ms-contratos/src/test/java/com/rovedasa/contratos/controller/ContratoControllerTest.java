@@ -23,10 +23,12 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -103,6 +105,28 @@ class ContratoControllerTest {
 
         verify(contratoService).aplicarAjuste(eq(1L),
                 argThat(p -> hoy.equals(p.getFechaIndiceDesde()) && hito.equals(p.getFechaIndiceHasta())), anyString());
+    }
+
+    @Test
+    void cancelarConUnMotivoDeMasDe500CaracteresDa400SinLlegarAlServicio() throws Exception {
+        mockMvc.perform(post("/api/contratos/1/cancelar").with(jwt().authorities(ADMIN))
+                        .param("motivo", "x".repeat(501)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.validaciones.motivo")
+                        .value("El motivo de cancelación admite como máximo 500 caracteres"));
+
+        verify(contratoService, never()).cancelarContrato(any(), any(), anyBoolean(), any());
+    }
+
+    @Test
+    void cancelarConUnMotivoDe500CaracteresLlegaAlServicio() throws Exception {
+        String motivo = "x".repeat(500);
+        when(contratoService.cancelarContrato(eq(1L), eq(motivo), eq(false), anyString()))
+                .thenReturn(ContratoResponse.builder().id(1L).build());
+
+        mockMvc.perform(post("/api/contratos/1/cancelar").with(jwt().authorities(ADMIN)).param("motivo", motivo))
+                .andExpect(status().isOk());
     }
 
     @Test

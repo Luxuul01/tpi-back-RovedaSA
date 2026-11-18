@@ -170,6 +170,23 @@ class PropiedadServiceTest {
         verifyNoInteractions(tasacionService);
     }
 
+    // RN-03: si GeoRef no devuelve la altura pedida, el cliente responde vacío y es "dirección no encontrada" (400)
+    @Test
+    void registrarCuandoGeoRefNoTraeLaAlturaLanzaOperacionInvalidaYNoGuarda() {
+        when(personaRepository.findById(1L)).thenReturn(Optional.of(propietario));
+        when(geoRefClient.normalizar("Independencia", "15000", "Córdoba", "Córdoba")).thenReturn(Optional.empty());
+        CrearPropiedadRequest solicitud = new CrearPropiedadRequest(TipologiaEnum.CASA, "Independencia", "15000",
+                null, null, null, null, "Córdoba", "Córdoba", new BigDecimal("55"), null, 1L);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> propiedadService.registrar(solicitud));
+
+        assertTrue(ex.getMessage().contains("'Independencia 15000'"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("la altura"), ex.getMessage());
+        verify(propiedadRepository, never()).save(any());
+        verifyNoInteractions(tasacionService);
+    }
+
     @Test
     void registrarConGeoRefCaidoPropagaLaExcepcionYNoGuardaNada() {
         when(personaRepository.findById(1L)).thenReturn(Optional.of(propietario));
@@ -376,6 +393,82 @@ class PropiedadServiceTest {
         assertEquals(EstadoPropiedadEnum.RESERVADA, dto.getEstado());
     }
 
+    // --- actualizarEstado con inquilinoId (contrato P-Q de la Saga: la propiedad tomada por otro contrato) ---
+
+    @ParameterizedTest
+    @EnumSource(value = EstadoPropiedadEnum.class, names = {"ALQUILADA", "DISPONIBLE"})
+    void actualizarDesdeReservadaConOtroInquilinoLanza409SinCambiarNada(EstadoPropiedadEnum destino) {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        ConflictoException ex = assertThrows(ConflictoException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(destino, 99L, null)));
+
+        assertEquals("La propiedad está tomada por otro contrato", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.RESERVADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+        assertSame(garante, propiedad.getGarante());
+        verifyNoInteractions(personaRepository);
+    }
+
+    @Test
+    void liberarAlquiladaConOtroInquilinoLanza409SinCambiarNada() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        ConflictoException ex = assertThrows(ConflictoException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, 99L, null)));
+
+        assertEquals("La propiedad está tomada por otro contrato", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+    }
+
+    @Test
+    void actualizarConElMismoInquilinoAplicaLaTransicion() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.ALQUILADA, 2L, 3L));
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, dto.getEstado());
+        assertEquals(2L, dto.getInquilinoId());
+    }
+
+    // Una reserva sin inquilino asignado no tiene con qué comparar: se sigue como antes
+    @Test
+    void actualizarReservadaSinInquilinoAsignadoNoVerificaElInquilino() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(null, null);
+
+        PropiedadDTO dto = propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.DISPONIBLE, 99L, null));
+
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, dto.getEstado());
+    }
+
+    // Orden: 404 -> estadoEsperado (409) -> otro contrato (409) -> transición (400)
+    @Test
+    void estadoEsperadoDistintoGanaSobreElInquilinoDistinto() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        assertThrows(EstadoPropiedadInesperadoException.class, () -> propiedadService.actualizarEstado(10L,
+                new ActualizarEstadoPropiedadDTO(EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA, 99L,
+                        null)));
+    }
+
+    @Test
+    void inquilinoDistintoGanaSobreLaTransicionInvalida() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        ConflictoException ex = assertThrows(ConflictoException.class,
+                () -> propiedadService.actualizarEstado(10L, cambio(EstadoPropiedadEnum.RESERVADA, 99L, null)));
+
+        assertEquals("La propiedad está tomada por otro contrato", ex.getMessage());
+    }
+
     // --- compensarEstado (contrato 2 con ms-contratos, Saga) ---
 
     @Test
@@ -444,6 +537,58 @@ class PropiedadServiceTest {
 
         assertTrue(ex.getMessage().contains("inquilinoId"));
         assertEquals(EstadoPropiedadEnum.DISPONIBLE, propiedad.getEstado());
+    }
+
+    // El agujero de la Saga: deshacer la seña de un contrato no puede liberar la reserva de otro
+    @Test
+    void compensarSenaDeOtroInquilinoLanza409YNoLiberaLaReserva() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        ConflictoException ex = assertThrows(ConflictoException.class, () -> propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.RESERVADA, EstadoPropiedadEnum.DISPONIBLE, 99L, null)));
+
+        assertEquals("La propiedad está tomada por otro contrato", ex.getMessage());
+        assertEquals(EstadoPropiedadEnum.RESERVADA, propiedad.getEstado());
+        assertSame(inquilino, propiedad.getInquilino());
+        assertSame(garante, propiedad.getGarante());
+    }
+
+    @Test
+    void compensarActivacionDeOtroInquilinoLanza409SinCambiarNada() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        assertThrows(ConflictoException.class, () -> propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.ALQUILADA, EstadoPropiedadEnum.RESERVADA, 99L, null)));
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, propiedad.getEstado());
+    }
+
+    @Test
+    void compensarSenaDelMismoInquilinoVuelveADisponible() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+
+        PropiedadDTO dto = propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.RESERVADA, EstadoPropiedadEnum.DISPONIBLE, 2L, 3L));
+
+        assertEquals(EstadoPropiedadEnum.DISPONIBLE, dto.getEstado());
+        assertNull(propiedad.getInquilino());
+    }
+
+    // Orden: el estadoActual distinto (409 de estado) se informa antes que el inquilino distinto
+    @Test
+    void compensarConEstadoActualDistintoGanaSobreElInquilinoDistinto() {
+        Propiedad propiedad = propiedadDisponible();
+        propiedad.reservar(inquilino, garante);
+        propiedad.alquilar();
+
+        assertThrows(EstadoPropiedadInesperadoException.class, () -> propiedadService.compensarEstado(10L,
+                compensacion(EstadoPropiedadEnum.RESERVADA, EstadoPropiedadEnum.DISPONIBLE, 99L, null)));
+
+        assertEquals(EstadoPropiedadEnum.ALQUILADA, propiedad.getEstado());
     }
 
     @Test

@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rovedasa.gateway.filter.CorrelationIdWebFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -15,7 +18,9 @@ import org.springframework.security.oauth2.server.resource.InvalidBearerTokenExc
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ErroresSeguridadHandlerTest {
 
     private final ErroresSeguridadHandler handler = new ErroresSeguridadHandler();
@@ -60,6 +65,19 @@ class ErroresSeguridadHandlerTest {
                 () -> assertEquals(403, body.get("status").asInt()),
                 () -> assertEquals("Forbidden", body.get("error").asText()),
                 () -> assertEquals("req-test-123", body.get("correlationId").asText()));
+    }
+
+    @Test
+    @DisplayName("401 y 403: la línea de log lleva el correlationId (el MDC no se carga en el Gateway reactivo)")
+    void elLogDe401Y403LlevaElCorrelationId(CapturedOutput salida) {
+        handler.commence(exchange("GET", "/api/contratos"), new BadCredentialsException("sin token")).block();
+        handler.handle(exchange("POST", "/api/propiedades"), new AccessDeniedException("rol")).block();
+
+        assertAll(
+                () -> assertTrue(salida.getAll().contains(
+                        "401 en el Gateway: GET /api/contratos (correlationId=req-test-123)")),
+                () -> assertTrue(salida.getAll().contains(
+                        "403 en el Gateway: POST /api/propiedades (correlationId=req-test-123)")));
     }
 
     @Test

@@ -207,6 +207,8 @@ class EstadoContratoTest {
     @Test
     @DisplayName("ACTIVO -> RESCINDIDO (>= 6 meses): aplica multa de 1 mes exacto (500000)")
     void debeRescindirConMultaDeUnMesCuandoAntiguedadMayorOIgualASeisMeses() {
+        // Frecuencia 12: al 15/01/2027 todavía no corresponde ningún ajuste (con 3 faltarían aplicar dos)
+        contratoBase.setFrecuenciaAjusteMeses(12);
         activarContratoDePrueba();
         LocalDate fechaRescision = LocalDate.of(2027, 1, 15); // 6 meses cumplidos desde 2026-07-01
 
@@ -219,6 +221,8 @@ class EstadoContratoTest {
     @Test
     @DisplayName("ACTIVO -> FINALIZADO: exige haber alcanzado la fechaFin y bloquea finalización prematura")
     void debeFinalizarSoloCuandoAlcanzaFechaFin() {
+        // Frecuencia 24 (toda la duración): no queda ningún ajuste por aplicar al llegar a la fecha de fin
+        contratoBase.setFrecuenciaAjusteMeses(24);
         activarContratoDePrueba();
         EstadoContrato estadoActivo = factory.obtenerEstado(contratoBase);
 
@@ -497,6 +501,7 @@ class EstadoContratoTest {
     @Test
     @DisplayName("Rescindir después de la fecha de fin: el último día válido es la fecha de fin")
     void rescisionDespuesDelFinTopeaEnLaFechaDeFin() {
+        contratoBase.setFrecuenciaAjusteMeses(24);
         activarContratoDePrueba();
         EstadoContrato activo = factory.obtenerEstado(contratoBase);
 
@@ -586,6 +591,79 @@ class EstadoContratoTest {
         assertEquals(3, tramo1.size());
         assertTrue(tramo1.stream().allMatch(c -> LocalDate.of(2026, 11, 15).equals(c.getFechaEmision())));
         assertEquals(new BigDecimal("0.00"), tramo1.get(0).calcularMora(LocalDate.of(2026, 11, 15), new BigDecimal("0.1")));
+    }
+
+    @Test
+    @DisplayName("Rescindir con un ajuste pendiente a la fecha de rescisión: 400 que pide aplicarlo y no cambia nada")
+    void rescindirConAjustePendienteSeRechaza() {
+        // Inicio 01/07/2026, frecuencia 3: el ajuste 1 (hito 01/10) no se aplicó (BCRA caído); octubre y noviembre
+        // están devengados y no se emitieron
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2026, 11, 18), LocalDate.of(2026, 11, 18)));
+
+        assertTrue(ex.getMessage().contains("Antes de rescindir el contrato CONT-TEST0001 aplicá el ajuste N° 1 "
+                + "(ventana 2026-07-01 → 2026-10-01)"), ex.getMessage());
+        assertEquals(EstadoContratoEnum.ACTIVO, contratoBase.getEstado());
+        assertTrue(contratoBase.getCuotas().stream().allMatch(c -> c.getEstado() == EstadoCuotaEnum.PENDIENTE));
+        // El hito es la fecha de corte: rescindir el mismo 01/10 también lo exige; el 30/09 no
+        assertThrows(OperacionInvalidaException.class,
+                () -> activo.rescindir(contratoBase, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 18)));
+        assertEquals(new BigDecimal("750000.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2026, 9, 30), LocalDate.of(2026, 11, 18)));
+    }
+
+    @Test
+    @DisplayName("Finalizar con un ajuste sin aplicar: 400 que pide aplicarlo antes")
+    void finalizarConAjustePendienteSeRechaza() {
+        // 01/07/2026 -> 01/07/2028 con frecuencia 3: el ajuste 1 (hito 01/10/2026) nunca se aplicó
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> activo.finalizar(contratoBase, LocalDate.of(2028, 7, 1)));
+
+        assertTrue(ex.getMessage().contains("Antes de finalizar el contrato CONT-TEST0001 aplicá el ajuste N° 1"),
+                ex.getMessage());
+        assertEquals(EstadoContratoEnum.ACTIVO, contratoBase.getEstado());
+    }
+
+    @Test
+    @DisplayName("Umbral de 6 meses con plusMonths: inicio 31/08/2026, el 28/02/2027 ya cobra 1 canon y el 27/02 cobra 1,5")
+    void umbralDeSeisMesesUsaLaConvencionDelCalendario() {
+        contratoBase.setFechaInicio(LocalDate.of(2026, 8, 31));
+        contratoBase.setFechaFin(LocalDate.of(2028, 8, 31));
+        contratoBase.setFrecuenciaAjusteMeses(12);
+        contratoBase.setEstado(EstadoContratoEnum.SENIADO);
+        factory.obtenerEstado(contratoBase).activar(contratoBase, LocalDate.of(2026, 8, 31));
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+        // inicio + 6 meses = 28/02/2027 (MONTHS.between daba 5 y cobraba 1,5)
+        assertEquals(new BigDecimal("750000.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2027, 2, 27), LocalDate.of(2027, 3, 1)));
+
+        contratoBase.setEstado(EstadoContratoEnum.ACTIVO);
+        contratoBase.getCuotas().forEach(c -> c.setEstado(EstadoCuotaEnum.PENDIENTE));
+        assertEquals(new BigDecimal("500000.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 1)));
+    }
+
+    @Test
+    @DisplayName("La multa usa el canon vigente a la fecha de rescisión: al 15/09 500.000 (750.000), al 15/10 625.000 (937.500)")
+    void multaConElCanonVigenteALaFechaDeRescision() {
+        activarContratoDePrueba();
+        EstadoContrato activo = factory.obtenerEstado(contratoBase);
+        // Ajuste 1 aplicado el 18/11: canon 625.000 desde el 01/10
+        activo.aplicarAjuste(contratoBase, ajuste(LocalDate.of(2026, 11, 18), null, null, "625000.00"));
+
+        assertEquals(new BigDecimal("750000.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2026, 9, 15), LocalDate.of(2026, 11, 18)));
+
+        contratoBase.setEstado(EstadoContratoEnum.ACTIVO);
+        contratoBase.getCuotas().forEach(c -> c.setEstado(EstadoCuotaEnum.PENDIENTE));
+        assertEquals(new BigDecimal("937500.00"),
+                activo.rescindir(contratoBase, LocalDate.of(2026, 10, 15), LocalDate.of(2026, 11, 18)));
     }
 
     private static Ajuste ajuste(LocalDate fechaAplicacion, LocalDate desde, LocalDate hasta, String montoNuevo) {

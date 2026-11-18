@@ -134,7 +134,9 @@ public class PropiedadController {
             description = "Transiciones de RN-05: DISPONIBLE -> RESERVADA, RESERVADA -> ALQUILADA o DISPONIBLE, "
                     + "ALQUILADA -> DISPONIBLE. Al reservar se pueden asignar inquilino y garante; al liberar se "
                     + "desvinculan. Si viene estadoEsperado y la propiedad no está en ese estado, responde 409 sin "
-                    + "cambiar nada (lo usa ms-contratos para no pisar un cambio de otro proceso).")
+                    + "cambiar nada (lo usa ms-contratos para no pisar un cambio de otro proceso). Si viene "
+                    + "inquilinoId y la propiedad está RESERVADA o ALQUILADA con otro inquilino, responde 409 "
+                    + "(está tomada por otro contrato).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Estado cambiado"),
             @ApiResponse(responseCode = "400", description = "Transición inválida, datos inválidos o persona sin el "
@@ -145,8 +147,8 @@ public class PropiedadController {
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "404", description = "No existe la propiedad o alguna de las personas",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "409", description = "La propiedad no está en el estadoEsperado, o cambió al "
-                    + "mismo tiempo (control de versión)",
+            @ApiResponse(responseCode = "409", description = "La propiedad no está en el estadoEsperado, está tomada "
+                    + "por otro contrato (otro inquilino) o cambió al mismo tiempo (control de versión)",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @PatchMapping("/{id}/estado")
@@ -160,7 +162,9 @@ public class PropiedadController {
             description = "Vuelve la propiedad de estadoActual a estadoAnterior. Solo deshace transiciones válidas "
                     + "de RN-05: RESERVADA -> DISPONIBLE (seña), ALQUILADA -> RESERVADA (activación), "
                     + "DISPONIBLE -> RESERVADA (cancelación de la seña) y DISPONIBLE -> ALQUILADA (rescisión o "
-                    + "finalización; exige inquilinoId). Pasa por el mismo control de versión que el cambio de estado.")
+                    + "finalización; exige inquilinoId). Si viene inquilinoId y la propiedad está RESERVADA o "
+                    + "ALQUILADA con otro inquilino, responde 409 sin deshacer nada. Pasa por el mismo control de "
+                    + "versión que el cambio de estado.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cambio deshecho; devuelve la propiedad"),
             @ApiResponse(responseCode = "400", description = "El par no es el inverso de una transición válida, falta "
@@ -172,8 +176,8 @@ public class PropiedadController {
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "404", description = "No existe la propiedad o alguna de las personas",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "409", description = "La propiedad no está en estadoActual, o cambió al mismo "
-                    + "tiempo (control de versión)", content = @Content(schema = @Schema(implementation = ApiError.class)))
+            @ApiResponse(responseCode = "409", description = "La propiedad no está en estadoActual, está tomada por "
+                    + "otro contrato (otro inquilino) o cambió al mismo tiempo (control de versión)", content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @PatchMapping("/{id}/estado/compensacion")
     public PropiedadDTO compensarEstado(@PathVariable("id") Long id,

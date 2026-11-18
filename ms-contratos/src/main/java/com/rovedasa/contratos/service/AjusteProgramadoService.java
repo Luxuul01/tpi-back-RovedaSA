@@ -1,6 +1,12 @@
 package com.rovedasa.contratos.service;
 
+import com.rovedasa.commons.exception.OperacionInvalidaException;
+import com.rovedasa.commons.exception.RecursoNoEncontradoException;
+import com.rovedasa.contratos.client.CatalogoConflictoException;
+import com.rovedasa.contratos.client.CatalogoIntegracionException;
 import com.rovedasa.contratos.dto.ResumenAjustePeriodicoResponse;
+import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
+import com.rovedasa.contratos.exception.IndiceNoDisponibleException;
 import com.rovedasa.contratos.state.PeriodoAjuste;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +24,11 @@ import java.util.Optional;
  * No es transaccional: cada ajuste lo aplica ContratoService.aplicarAjuste en su propia transacción corta
  * (y el índice se consulta fuera de ella), así un error en un contrato no revierte los ajustes de los otros.
  * Si un ajuste falla, ese contrato queda pendiente para la próxima corrida (RN-12) y se sigue con el siguiente.
+ *
+ * El motivo de un pendiente es para el cliente: las excepciones de negocio del proyecto conservan su mensaje y
+ * cualquier otro error da un motivo genérico (el detalle técnico, como una sentencia SQL, va solo al log). Si dos
+ * corridas aplican el mismo ajuste a la vez, la que pierde recibe un conflicto de unicidad o de versión: si el
+ * ajuste quedó aplicado por la otra no se informa como pendiente.
  */
 @Slf4j
 @Service
@@ -25,6 +36,10 @@ import java.util.Optional;
 public class AjusteProgramadoService {
 
     static final String USUARIO_SISTEMA = "SISTEMA";
+    static final String MOTIVO_ERROR_INTERNO = "Error interno al aplicar el ajuste; buscá el detalle en los logs";
+    static final String MOTIVO_YA_APLICADO = "Ya lo aplicó otra ejecución";
+    static final String MOTIVO_CONCURRENTE =
+            "Otra operación modificó el contrato al mismo tiempo; queda para la próxima corrida";
 
     private final ContratoService contratoService;
 
@@ -75,6 +90,12 @@ public class AjusteProgramadoService {
                 log.info("Ajuste periódico N° {} ({} a {}) aplicado al contrato {}",
                         periodo.numero(), periodo.desde(), periodo.hasta(), contratoId);
             } catch (RuntimeException e) {
+                if (ContratoService.esConflictoDeConcurrencia(e) && quedoAplicado(contratoId, periodo)) {
+                    log.warn("Ajuste periódico N° {} ({} a {}) del contrato {}: {} ({})", periodo.numero(),
+                            periodo.desde(), periodo.hasta(), contratoId, MOTIVO_YA_APLICADO,
+                            e.getClass().getSimpleName());
+                    return aplicados;
+                }
                 registrarPendiente(pendientes, contratoId, String.format("Ajuste N° %d (%s a %s): %s",
                         periodo.numero(), periodo.desde(), periodo.hasta(), motivo(e)), e);
                 return aplicados;
@@ -82,16 +103,50 @@ public class AjusteProgramadoService {
         }
     }
 
+    /** Después de un conflicto: si el ajuste del período quedó registrado (lo aplicó la otra ejecución). */
+    private boolean quedoAplicado(Long contratoId, PeriodoAjuste periodo) {
+        try {
+            return contratoService.ajusteYaAplicado(contratoId, periodo.hasta());
+        } catch (RuntimeException e) {
+            log.warn("No se pudo verificar si el ajuste N° {} del contrato {} quedó aplicado: {}",
+                    periodo.numero(), contratoId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Lo esperable (negocio o concurrencia) va en WARN sin stacktrace; lo inesperado en ERROR con stacktrace. */
     private static void registrarPendiente(List<ResumenAjustePeriodicoResponse.Pendiente> pendientes,
                                            Long contratoId, String motivo, RuntimeException e) {
-        log.warn("No se pudo aplicar el ajuste periódico al contrato {}: {}", contratoId, motivo, e);
+        if (esErrorDeNegocio(e) || ContratoService.esConflictoDeConcurrencia(e)) {
+            log.warn("No se pudo aplicar el ajuste periódico al contrato {}: {} ({}: {})", contratoId, motivo,
+                    e.getClass().getSimpleName(), e.getMessage());
+        } else {
+            log.error("No se pudo aplicar el ajuste periódico al contrato {}: {}", contratoId, motivo, e);
+        }
         pendientes.add(ResumenAjustePeriodicoResponse.Pendiente.builder()
                 .contratoId(contratoId)
                 .motivo(motivo)
                 .build());
     }
 
+    /** Motivo que se informa en el resumen: nunca el mensaje de una excepción técnica. */
     private static String motivo(RuntimeException e) {
-        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        if (esErrorDeNegocio(e) && e.getMessage() != null) {
+            return e.getMessage();
+        }
+        if (ContratoService.esConflictoDeConcurrencia(e)) {
+            return MOTIVO_CONCURRENTE;
+        }
+        return MOTIVO_ERROR_INTERNO;
+    }
+
+    /** Excepciones propias del proyecto: su mensaje está escrito para el cliente. */
+    private static boolean esErrorDeNegocio(RuntimeException e) {
+        return e instanceof OperacionInvalidaException
+                || e instanceof RecursoNoEncontradoException
+                || e instanceof IndiceNoDisponibleException
+                || e instanceof CatalogoNoDisponibleException
+                || e instanceof CatalogoConflictoException
+                || e instanceof CatalogoIntegracionException;
     }
 }

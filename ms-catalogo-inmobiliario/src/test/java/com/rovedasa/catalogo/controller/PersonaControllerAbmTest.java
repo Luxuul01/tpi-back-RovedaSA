@@ -145,6 +145,36 @@ class PersonaControllerAbmTest {
         verifyNoInteractions(personaService);
     }
 
+    // NUMERIC(15,2): sin @Digits, 1e20 llegaba a la base y volvía como 409 "valor duplicado"
+    @ParameterizedTest
+    @ValueSource(strings = {"1e20", "10000000000000", "1500000.123"})
+    void postConIngresosFueraDeLaPrecisionDeLaColumnaDevuelve400(String ingresos) throws Exception {
+        String cuerpo = """
+                {"cuitCuil": "20123456786", "nombre": "Juan", "apellido": "Pérez", "roles": ["GARANTE"],
+                 "ingresosMensualesDeclarados": %s}
+                """.formatted(ingresos);
+
+        mockMvc.perform(postPersona(cuerpo).with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.validaciones.ingresosMensualesDeclarados",
+                        containsString("13 dígitos enteros y 2 decimales")));
+
+        verifyNoInteractions(personaService);
+    }
+
+    @Test
+    void postConIngresosEnElLimiteDeLaColumnaDevuelve201() throws Exception {
+        when(personaService.registrar(any(CrearPersonaRequest.class)))
+                .thenReturn(persona(8L, null, TipoPersonaEnum.GARANTE));
+        String cuerpo = """
+                {"cuitCuil": "20123456786", "nombre": "Juan", "apellido": "Pérez", "roles": ["GARANTE"],
+                 "ingresosMensualesDeclarados": 9999999999999.99}
+                """;
+
+        mockMvc.perform(postPersona(cuerpo).with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isCreated());
+    }
+
     @Test
     void postConCuitDuplicadoDevuelve409SinElCuitEnElMensaje() throws Exception {
         when(personaService.registrar(any(CrearPersonaRequest.class)))
@@ -236,7 +266,7 @@ class PersonaControllerAbmTest {
         PersonaResponse conGarante = new PersonaResponse(7L, "20123456786", "Juan", "Pérez", "Juan Pérez", null, null,
                 KC_PROPIETARIO, Set.of(TipoPersonaEnum.PROPIETARIO, TipoPersonaEnum.GARANTE), null, null, null, null,
                 null);
-        when(personaService.agregarRol(7L, TipoPersonaEnum.GARANTE)).thenReturn(conGarante);
+        when(personaService.agregarRol(7L, TipoPersonaEnum.GARANTE, null)).thenReturn(conGarante);
 
         mockMvc.perform(patchRol(7L, "{\"rol\": \"GARANTE\"}").with(conRol("ADMINISTRADOR")))
                 .andExpect(status().isOk())
@@ -247,11 +277,39 @@ class PersonaControllerAbmTest {
     void agregarRolQueExigeKeycloakAUnaPersonaSinVinculoDevuelve400() throws Exception {
         String mensaje = "No se puede agregar el rol INQUILINO a la persona ID 8: no está vinculada a un usuario de "
                 + "Keycloak (keycloakUserId) y sin él no podría ver sus propiedades ni sus contratos";
-        when(personaService.agregarRol(8L, TipoPersonaEnum.INQUILINO)).thenThrow(new OperacionInvalidaException(mensaje));
+        when(personaService.agregarRol(8L, TipoPersonaEnum.INQUILINO, null)).thenThrow(new OperacionInvalidaException(mensaje));
 
         mockMvc.perform(patchRol(8L, "{\"rol\": \"INQUILINO\"}").with(conRol("ADMINISTRADOR")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(mensaje));
+    }
+
+    // Un GARANTE sin usuario de Keycloak pasa a INQUILINO indicando su keycloakUserId en el body
+    @Test
+    void agregarRolConKeycloakUserIdEnElBodyLoPasaAlServicio() throws Exception {
+        PersonaResponse conInquilino = new PersonaResponse(8L, "20123456786", "Juan", "Pérez", "Juan Pérez", null,
+                null, KC_PROPIETARIO, Set.of(TipoPersonaEnum.GARANTE, TipoPersonaEnum.INQUILINO), null, null, null,
+                null, null);
+        when(personaService.agregarRol(8L, TipoPersonaEnum.INQUILINO, KC_PROPIETARIO)).thenReturn(conInquilino);
+
+        mockMvc.perform(patchRol(8L, "{\"rol\": \"INQUILINO\", \"keycloakUserId\": \"" + KC_PROPIETARIO + "\"}")
+                        .with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keycloakUserId").value(KC_PROPIETARIO))
+                .andExpect(jsonPath("$.roles.length()").value(2));
+
+        verify(personaService).agregarRol(8L, TipoPersonaEnum.INQUILINO, KC_PROPIETARIO);
+    }
+
+    @Test
+    void agregarRolConKeycloakUserIdQueYaUsaOtraPersonaDevuelve409() throws Exception {
+        when(personaService.agregarRol(8L, TipoPersonaEnum.INQUILINO, KC_PROPIETARIO)).thenThrow(
+                new RecursoDuplicadoException("Ya existe una persona vinculada al usuario de Keycloak " + KC_PROPIETARIO));
+
+        mockMvc.perform(patchRol(8L, "{\"rol\": \"INQUILINO\", \"keycloakUserId\": \"" + KC_PROPIETARIO + "\"}")
+                        .with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test
@@ -282,7 +340,7 @@ class PersonaControllerAbmTest {
 
     @Test
     void agregarRolAPersonaInexistenteDevuelve404() throws Exception {
-        when(personaService.agregarRol(99L, TipoPersonaEnum.GARANTE))
+        when(personaService.agregarRol(99L, TipoPersonaEnum.GARANTE, null))
                 .thenThrow(new RecursoNoEncontradoException("No existe la persona con ID 99"));
 
         mockMvc.perform(patchRol(99L, "{\"rol\": \"GARANTE\"}").with(conRol("ADMINISTRADOR")))

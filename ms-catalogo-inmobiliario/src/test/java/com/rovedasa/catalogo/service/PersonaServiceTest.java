@@ -29,6 +29,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -80,6 +81,31 @@ class PersonaServiceTest {
         verify(personaRepository, never()).save(any());
     }
 
+    // El sub de Keycloak viene en minúscula: en mayúscula el usuario vería listas vacías y se esquivaba la unicidad
+    @Test
+    void registrarGuardaElKeycloakUserIdEnMinusculaYValidaLaUnicidadConEsaForma() {
+        String kcEnMayuscula = "ABCDEF01-2345-6789-ABCD-EF0123456789";
+        String kcEnMinuscula = "abcdef01-2345-6789-abcd-ef0123456789";
+        when(personaRepository.existsByCuitCuil("20123456786")).thenReturn(false);
+        when(personaRepository.existsByKeycloakUserId(kcEnMinuscula)).thenReturn(false);
+        when(personaRepository.save(any(Persona.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        PersonaResponse respuesta = personaService.registrar(solicitud("20123456786", " " + kcEnMayuscula + " ", null));
+
+        assertEquals(kcEnMinuscula, respuesta.keycloakUserId());
+        verify(personaRepository).existsByKeycloakUserId(kcEnMinuscula);
+    }
+
+    @Test
+    void registrarConKeycloakUserIdEnMayusculaQueYaUsaOtraPersonaLanzaRecursoDuplicado() {
+        when(personaRepository.existsByCuitCuil("20123456786")).thenReturn(false);
+        when(personaRepository.existsByKeycloakUserId("abcdef01-2345-6789-abcd-ef0123456789")).thenReturn(true);
+
+        assertThrows(RecursoDuplicadoException.class, () -> personaService.registrar(
+                solicitud("20123456786", "ABCDEF01-2345-6789-ABCD-EF0123456789", null)));
+        verify(personaRepository, never()).save(any());
+    }
+
     @Test
     void registrarConKeycloakUserIdDuplicadoLanzaRecursoDuplicado() {
         when(personaRepository.existsByCuitCuil("20123456786")).thenReturn(false);
@@ -120,10 +146,10 @@ class PersonaServiceTest {
         Persona persona = persona(1L, TipoPersonaEnum.PROPIETARIO, KC_PROPIETARIO);
         when(personaRepository.findById(1L)).thenReturn(Optional.of(persona));
 
-        PersonaResponse mismoRol = personaService.agregarRol(1L, TipoPersonaEnum.PROPIETARIO);
+        PersonaResponse mismoRol = personaService.agregarRol(1L, TipoPersonaEnum.PROPIETARIO, null);
         assertEquals(Set.of(TipoPersonaEnum.PROPIETARIO), mismoRol.roles());
 
-        PersonaResponse conGarante = personaService.agregarRol(1L, TipoPersonaEnum.GARANTE);
+        PersonaResponse conGarante = personaService.agregarRol(1L, TipoPersonaEnum.GARANTE, null);
         assertEquals(Set.of(TipoPersonaEnum.PROPIETARIO, TipoPersonaEnum.GARANTE), conGarante.roles());
     }
 
@@ -135,7 +161,7 @@ class PersonaServiceTest {
         when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
 
         OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
-                () -> personaService.agregarRol(5L, rol));
+                () -> personaService.agregarRol(5L, rol, null));
 
         assertTrue(ex.getMessage().contains("keycloakUserId"), ex.getMessage());
         assertEquals(Set.of(TipoPersonaEnum.GARANTE), garante.getRoles());
@@ -146,9 +172,62 @@ class PersonaServiceTest {
         Persona garante = persona(5L, TipoPersonaEnum.GARANTE, KC_PROPIETARIO);
         when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
 
-        PersonaResponse respuesta = personaService.agregarRol(5L, TipoPersonaEnum.INQUILINO);
+        PersonaResponse respuesta = personaService.agregarRol(5L, TipoPersonaEnum.INQUILINO, null);
 
         assertEquals(Set.of(TipoPersonaEnum.GARANTE, TipoPersonaEnum.INQUILINO), respuesta.roles());
+    }
+
+    // Un GARANTE dado de alta sin usuario puede pasar a INQUILINO o PROPIETARIO si se indica su keycloakUserId
+    @ParameterizedTest
+    @EnumSource(value = TipoPersonaEnum.class, names = {"PROPIETARIO", "INQUILINO"})
+    void agregarRolQueExigeKeycloakConKeycloakUserIdEnElBodyVinculaALaPersonaEnMinuscula(TipoPersonaEnum rol) {
+        Persona garante = persona(5L, TipoPersonaEnum.GARANTE, null);
+        when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
+        when(personaRepository.existsByKeycloakUserId("abcdef01-2345-6789-abcd-ef0123456789")).thenReturn(false);
+
+        PersonaResponse respuesta = personaService.agregarRol(5L, rol, " ABCDEF01-2345-6789-ABCD-EF0123456789 ");
+
+        assertEquals(Set.of(TipoPersonaEnum.GARANTE, rol), respuesta.roles());
+        assertEquals("abcdef01-2345-6789-abcd-ef0123456789", garante.getKeycloakUserId());
+    }
+
+    @Test
+    void agregarRolConKeycloakUserIdQueNoEsUuidLanzaOperacionInvalidaSinVincular() {
+        Persona garante = persona(5L, TipoPersonaEnum.GARANTE, null);
+        when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> personaService.agregarRol(5L, TipoPersonaEnum.INQUILINO, "kc-inquilino-1"));
+
+        assertTrue(ex.getMessage().contains("UUID"), ex.getMessage());
+        assertNull(garante.getKeycloakUserId());
+        assertEquals(Set.of(TipoPersonaEnum.GARANTE), garante.getRoles());
+        verify(personaRepository, never()).existsByKeycloakUserId(any());
+    }
+
+    @Test
+    void agregarRolConKeycloakUserIdQueYaUsaOtraPersonaLanzaRecursoDuplicadoSinVincular() {
+        Persona garante = persona(5L, TipoPersonaEnum.GARANTE, null);
+        when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
+        when(personaRepository.existsByKeycloakUserId(KC_PROPIETARIO)).thenReturn(true);
+
+        assertThrows(RecursoDuplicadoException.class,
+                () -> personaService.agregarRol(5L, TipoPersonaEnum.INQUILINO, KC_PROPIETARIO));
+
+        assertNull(garante.getKeycloakUserId());
+        assertEquals(Set.of(TipoPersonaEnum.GARANTE), garante.getRoles());
+    }
+
+    // Si la persona ya está vinculada, el keycloakUserId del body no reemplaza al que tiene
+    @Test
+    void agregarRolAUnaPersonaVinculadaIgnoraElKeycloakUserIdDelBody() {
+        Persona garante = persona(5L, TipoPersonaEnum.GARANTE, KC_PROPIETARIO);
+        when(personaRepository.findById(5L)).thenReturn(Optional.of(garante));
+
+        personaService.agregarRol(5L, TipoPersonaEnum.INQUILINO, "abcdef01-2345-6789-abcd-ef0123456789");
+
+        assertEquals(KC_PROPIETARIO, garante.getKeycloakUserId());
+        verify(personaRepository, never()).existsByKeycloakUserId(any());
     }
 
     @Test
@@ -156,7 +235,7 @@ class PersonaServiceTest {
         Persona persona = persona(6L, TipoPersonaEnum.GARANTE, null);
         when(personaRepository.findById(6L)).thenReturn(Optional.of(persona));
 
-        assertEquals(Set.of(TipoPersonaEnum.GARANTE), personaService.agregarRol(6L, TipoPersonaEnum.GARANTE).roles());
+        assertEquals(Set.of(TipoPersonaEnum.GARANTE), personaService.agregarRol(6L, TipoPersonaEnum.GARANTE, null).roles());
     }
 
     @Test

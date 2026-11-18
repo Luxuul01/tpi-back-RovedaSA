@@ -90,6 +90,68 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("Violación de integridad con SQLState de unicidad (23505) -> 409 con mensaje neutro, sin afirmar duplicado")
+    void violacionDeUnicidadDevuelve409ConMensajeNeutro() {
+        DataIntegrityViolationException ex = new DataIntegrityViolationException("could not execute statement",
+                new RuntimeException("could not execute statement",
+                        new SQLException("ERROR: duplicate key value violates unique constraint", "23505")));
+
+        ResponseEntity<ApiError> respuesta = handler.handleIntegridad(ex, request);
+
+        verificar(respuesta, HttpStatus.CONFLICT);
+        assertEquals("Conflicto con datos ya registrados", respuesta.getBody().getMessage());
+        assertFalse(respuesta.getBody().getMessage().contains("duplicado"));
+    }
+
+    @Test
+    @DisplayName("Violación de integridad sin SQLException en la cadena -> 409")
+    void violacionDeIntegridadSinSqlExceptionDevuelve409() {
+        ResponseEntity<ApiError> respuesta = handler.handleIntegridad(
+                new DataIntegrityViolationException("uk_ajuste_contrato_fecha_hasta"), request);
+
+        verificar(respuesta, HttpStatus.CONFLICT);
+        assertEquals(GlobalExceptionHandler.MENSAJE_INTEGRIDAD, respuesta.getBody().getMessage());
+    }
+
+    @Test
+    @DisplayName("Valor numérico fuera de rango (SQLState 22003) -> 400 sin exponer el SQL")
+    void valorFueraDeRangoDevuelve400() {
+        DataIntegrityViolationException ex = new DataIntegrityViolationException("could not execute statement",
+                new RuntimeException("could not execute statement",
+                        new SQLException("ERROR: numeric field overflow", "22003")));
+
+        ResponseEntity<ApiError> respuesta = handler.handleIntegridad(ex, request);
+
+        verificar(respuesta, HttpStatus.BAD_REQUEST);
+        assertEquals("Algún dato está fuera del rango permitido", respuesta.getBody().getMessage());
+        assertFalse(respuesta.getBody().getMessage().contains("numeric field overflow"));
+    }
+
+    @Test
+    @DisplayName("Carácter NUL en un texto (SQLState 22021) -> 400")
+    void caracterNulEnUnTextoDevuelve400() {
+        DataIntegrityViolationException ex = new DataIntegrityViolationException("could not execute statement",
+                new SQLException("ERROR: invalid byte sequence for encoding \"UTF8\": 0x00", "22021"));
+
+        ResponseEntity<ApiError> respuesta = handler.handleIntegridad(ex, request);
+
+        verificar(respuesta, HttpStatus.BAD_REQUEST);
+        assertEquals(GlobalExceptionHandler.MENSAJE_DATO_FUERA_DE_RANGO, respuesta.getBody().getMessage());
+    }
+
+    @Test
+    @DisplayName("Fecha imposible para la base (SQLState 22008) -> 400")
+    void fechaImposibleDevuelve400() {
+        DataIntegrityViolationException ex = new DataIntegrityViolationException("could not execute statement",
+                new SQLException("ERROR: date/time field value out of range", "22008"));
+
+        ResponseEntity<ApiError> respuesta = handler.handleIntegridad(ex, request);
+
+        verificar(respuesta, HttpStatus.BAD_REQUEST);
+        assertEquals(GlobalExceptionHandler.MENSAJE_DATO_FUERA_DE_RANGO, respuesta.getBody().getMessage());
+    }
+
+    @Test
     @DisplayName("Content-Type no soportado -> 415")
     void contentTypeNoSoportadoDevuelve415() {
         ResponseEntity<ApiError> respuesta = handler.handleTipoDeContenidoNoSoportado(

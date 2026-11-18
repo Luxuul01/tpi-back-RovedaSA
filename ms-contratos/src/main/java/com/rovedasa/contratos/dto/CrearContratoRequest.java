@@ -28,6 +28,14 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class CrearContratoRequest {
 
+    /**
+     * Rango de fechas admitido para un contrato. El Alcance no fija una duración máxima; estos topes solo frenan
+     * fechas absurdas (año 0001 o 5874898) que la base rechazaría. ContratoService.crearContrato los valida (400)
+     * antes de consultar el catálogo, junto con la regla fechaFin posterior a fechaInicio.
+     */
+    public static final LocalDate FECHA_INICIO_MINIMA = LocalDate.of(2000, 1, 1);
+    public static final LocalDate FECHA_FIN_MAXIMA = LocalDate.of(2100, 12, 31);
+
     @NotNull(message = "El ID de la propiedad es obligatorio")
     private Long propiedadId;
 

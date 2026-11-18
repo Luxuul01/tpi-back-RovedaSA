@@ -36,8 +36,9 @@ public class ErroresSeguridadHandler implements ServerAuthenticationEntryPoint, 
     }
 
     Mono<Void> escribir(ServerWebExchange exchange, HttpStatus status, String mensaje) {
-        log.warn("{} en el Gateway: {} {}", status.value(), exchange.getRequest().getMethod(),
-                exchange.getRequest().getPath().value());
+        // El correlationId va en el texto: en el Gateway reactivo el MDC está vacío (T-01)
+        log.warn("{} en el Gateway: {} {} (correlationId={})", status.value(), exchange.getRequest().getMethod(),
+                exchange.getRequest().getPath().value(), EscritorApiError.correlationId(exchange));
         return EscritorApiError.escribir(exchange, status, mensaje);
     }
 

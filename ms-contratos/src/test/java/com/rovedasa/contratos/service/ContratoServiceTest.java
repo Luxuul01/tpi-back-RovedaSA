@@ -220,6 +220,34 @@ class ContratoServiceTest {
         verify(catalogoClient, never()).obtenerPropiedad(any());
     }
 
+    @Test
+    @DisplayName("Crear contrato: fechas absurdas (año 0001 o 5874898) dan 400 sin llegar al catálogo ni a la base")
+    void crearContratoRechazaFechasFueraDeRango() {
+        OperacionInvalidaException inicio = assertThrows(OperacionInvalidaException.class, () -> contratoService
+                .crearContrato(requestAlta().fechaInicio(LocalDate.of(1, 1, 1)).build()));
+        assertTrue(inicio.getMessage().contains("anterior al 2000-01-01"), inicio.getMessage());
+
+        OperacionInvalidaException fin = assertThrows(OperacionInvalidaException.class, () -> contratoService
+                .crearContrato(requestAlta().fechaFin(LocalDate.of(5874898, 1, 1)).build()));
+        assertTrue(fin.getMessage().contains("posterior al 2100-12-31"), fin.getMessage());
+
+        verify(catalogoClient, never()).obtenerPropiedad(any());
+        verify(contratoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Crear contrato: los topes del rango de fechas (01/01/2000 y 31/12/2100) se aceptan")
+    void crearContratoAceptaLosTopesDelRango() {
+        mockearPartesAlta();
+        when(contratoRepository.save(any(Contrato.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ContratoResponse resp = contratoService.crearContrato(requestAlta()
+                .fechaInicio(CrearContratoRequest.FECHA_INICIO_MINIMA)
+                .fechaFin(CrearContratoRequest.FECHA_FIN_MAXIMA).build());
+
+        assertEquals(LocalDate.of(2100, 12, 31), resp.getFechaFin());
+    }
+
     // ------------------------------------------------------------------
     // Ajustes: hitos, ventana y validación antes del índice
     // ------------------------------------------------------------------
@@ -375,7 +403,7 @@ class ContratoServiceTest {
             orden.verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.RESERVADA,
                     EstadoPropiedadEnum.DISPONIBLE, INQUILINO, GARANTE);
             orden.verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.RESERVADA,
-                    EstadoPropiedadEnum.DISPONIBLE, null, null);
+                    EstadoPropiedadEnum.DISPONIBLE, INQUILINO, GARANTE);
         }
 
         @Test
@@ -408,7 +436,7 @@ class ContratoServiceTest {
             verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
                     EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                    EstadoPropiedadEnum.RESERVADA, null, null);
+                    EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         }
 
         @Test
@@ -471,7 +499,7 @@ class ContratoServiceTest {
                     () -> contratoService.cancelarContrato(1L, "Desiste", true, "sub-admin"));
 
             verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
-                    EstadoPropiedadEnum.RESERVADA, null, null);
+                    EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
                     EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         }
@@ -517,7 +545,7 @@ class ContratoServiceTest {
                     RescindirContratoRequest.builder().fechaRescision(HOY).build(), "sub-admin"));
 
             verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
-                    EstadoPropiedadEnum.ALQUILADA, null, null);
+                    EstadoPropiedadEnum.ALQUILADA, INQUILINO, GARANTE);
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
                     EstadoPropiedadEnum.ALQUILADA, INQUILINO, GARANTE);
         }
@@ -552,7 +580,7 @@ class ContratoServiceTest {
             assertSame(errorBase, assertThrows(RuntimeException.class,
                     () -> contratoService.activarContrato(1L, "sub-admin")));
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                    EstadoPropiedadEnum.RESERVADA, null, null);
+                    EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         }
     }
 
@@ -581,7 +609,7 @@ class ContratoServiceTest {
                             .montoSenia(new BigDecimal("100000")).fechaLimiteSenia(HOY.plusDays(10)).build(), "sub-admin")));
 
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.RESERVADA,
-                    EstadoPropiedadEnum.DISPONIBLE, null, null);
+                    EstadoPropiedadEnum.DISPONIBLE, INQUILINO, GARANTE);
             verify(contratoRepository, never()).saveAndFlush(any());
         }
 
@@ -597,7 +625,7 @@ class ContratoServiceTest {
                     () -> contratoService.activarContrato(1L, "sub-admin")));
 
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                    EstadoPropiedadEnum.RESERVADA, null, null);
+                    EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
             verify(contratoRepository, never()).saveAndFlush(any());
             verify(contratoRepository, never()).findByPropiedadIdAndEstado(any(), any());
         }
@@ -679,7 +707,7 @@ class ContratoServiceTest {
             assertSame(inesperado, assertThrows(IllegalStateException.class,
                     () -> contratoService.activarContrato(1L, "sub-admin")));
             verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                    EstadoPropiedadEnum.RESERVADA, null, null);
+                    EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         }
 
         @Test
@@ -927,7 +955,7 @@ class ContratoServiceTest {
         assertEquals(HOY.minusDays(1), resp.getFechaRescision());
         assertEquals(EstadoContratoEnum.RESCINDIDO, contrato.getEstado());
         verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
-                EstadoPropiedadEnum.ALQUILADA, null, null);
+                EstadoPropiedadEnum.ALQUILADA, INQUILINO, GARANTE);
     }
 
     @Test
@@ -944,7 +972,37 @@ class ContratoServiceTest {
         assertEquals(EstadoCuotaEnum.PENDIENTE, contrato.getCuotas().get(12).getEstado());
         assertEquals(EstadoCuotaEnum.PENDIENTE, contrato.getCuotas().get(11).getEstado());
         verify(catalogoClient).actualizarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
-                EstadoPropiedadEnum.ALQUILADA, null, null);
+                EstadoPropiedadEnum.ALQUILADA, INQUILINO, GARANTE);
+    }
+
+    @Test
+    @DisplayName("Rescindir con el ajuste 1 sin aplicar (BCRA caído): 400 que pide aplicarlo, sin tocar el catálogo")
+    void rescindirConAjustePendienteSeRechazaSinTocarElCatalogo() {
+        // Inicio 01/07/2026, frecuencia 3, hoy 17/11: el ajuste 1 (hito 01/10) está pendiente
+        Contrato contrato = contratoActivo(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2028, 7, 1), 3);
+        when(contratoRepository.findById(1L)).thenReturn(Optional.of(contrato));
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class, () -> contratoService
+                .rescindirContrato(1L, RescindirContratoRequest.builder().fechaRescision(HOY).build(), "sub-admin"));
+
+        assertTrue(ex.getMessage().contains("aplicá el ajuste N° 1 (ventana 2026-07-01 → 2026-10-01)"), ex.getMessage());
+        verify(catalogoClient, never()).obtenerPropiedad(any());
+        verify(contratoRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Finalizar con un ajuste sin aplicar: 400 sin tocar el catálogo")
+    void finalizarConAjustePendienteSeRechazaSinTocarElCatalogo() {
+        // 17/11/2025 -> 17/11/2026 con frecuencia 6: el ajuste 1 (hito 17/05/2026) nunca se aplicó
+        Contrato contrato = contratoActivo(1L, LocalDate.of(2025, 11, 17), HOY, 6);
+        when(contratoRepository.findById(1L)).thenReturn(Optional.of(contrato));
+
+        OperacionInvalidaException ex = assertThrows(OperacionInvalidaException.class,
+                () -> contratoService.finalizarContrato(1L, "sub-admin"));
+
+        assertTrue(ex.getMessage().contains("Antes de finalizar"), ex.getMessage());
+        verify(catalogoClient, never()).obtenerPropiedad(any());
+        assertEquals(EstadoContratoEnum.ACTIVO, contrato.getEstado());
     }
 
     @Test

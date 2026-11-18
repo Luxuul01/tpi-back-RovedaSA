@@ -63,10 +63,12 @@ public class CorrelationIdWebFilter implements WebFilter {
         if (recibido != null && FORMATO_VALIDO.matcher(recibido).matches()) {
             return recibido;
         }
+        String generado = "req-" + UUID.randomUUID();
         if (recibido != null && !recibido.isEmpty()) {
             // No se loguea el valor recibido: justamente puede traer saltos de línea o basura
-            log.debug("X-Correlation-ID con formato inválido (largo {}); se genera uno nuevo", recibido.length());
+            log.debug("X-Correlation-ID con formato inválido (largo {}); se genera uno nuevo (correlationId={})",
+                    recibido.length(), generado);
         }
-        return "req-" + UUID.randomUUID();
+        return generado;
     }
 }

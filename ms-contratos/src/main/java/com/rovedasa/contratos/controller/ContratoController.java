@@ -15,6 +15,7 @@ import com.rovedasa.contratos.service.CuotaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -127,7 +128,9 @@ public class ContratoController {
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> cancelarContrato(
             @PathVariable("id") Long id,
-            @RequestParam("motivo") String motivo,
+            // Mismo largo que la columna motivo_cancelacion (500): se valida antes de tocar el catálogo (400)
+            @RequestParam("motivo")
+            @Size(max = 500, message = "El motivo de cancelación admite como máximo 500 caracteres") String motivo,
             @RequestParam(value = "retenerSenia", defaultValue = "false") boolean retenerSenia,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);

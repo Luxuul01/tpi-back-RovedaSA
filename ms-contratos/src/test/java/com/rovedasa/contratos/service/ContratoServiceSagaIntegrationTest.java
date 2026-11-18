@@ -5,7 +5,9 @@ import com.rovedasa.commons.dto.ValidacionGaranteDTO;
 import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.contratos.client.CatalogoClient;
 import com.rovedasa.contratos.client.CatalogoConflictoException;
+import com.rovedasa.contratos.dto.OrigenDatoEnum;
 import com.rovedasa.contratos.dto.RescindirContratoRequest;
+import com.rovedasa.contratos.dto.ResultadoAjusteDTO;
 import com.rovedasa.contratos.dto.SeniarContratoRequest;
 import com.rovedasa.contratos.exception.CatalogoNoDisponibleException;
 import com.rovedasa.contratos.model.Contrato;
@@ -70,6 +72,9 @@ class ContratoServiceSagaIntegrationTest {
     @MockBean
     private CatalogoClient catalogoClient;
 
+    @MockBean
+    private IndiceService indiceService;
+
     private final List<String> llamadasConTransaccion = new ArrayList<>();
 
     @BeforeEach
@@ -127,7 +132,7 @@ class ContratoServiceSagaIntegrationTest {
         assertSame(timeout, assertThrows(CatalogoNoDisponibleException.class,
                 () -> contratoService.activarContrato(id, "sub-admin")));
         verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                EstadoPropiedadEnum.RESERVADA, null, null);
+                EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         assertEquals(EstadoContratoEnum.SENIADO, leer(id, Contrato::getEstado));
         assertEquals(Integer.valueOf(0), leer(id, c -> c.getCuotas().size()));
 
@@ -156,9 +161,41 @@ class ContratoServiceSagaIntegrationTest {
         assertThrows(ObjectOptimisticLockingFailureException.class, () -> contratoService.activarContrato(id, "sub-admin"));
 
         verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.ALQUILADA,
-                EstadoPropiedadEnum.RESERVADA, null, null);
+                EstadoPropiedadEnum.RESERVADA, INQUILINO, GARANTE);
         assertEquals(EstadoContratoEnum.CANCELADO, leer(id, Contrato::getEstado));
         assertEquals(Integer.valueOf(0), leer(id, c -> c.getCuotas().size()));
+    }
+
+    @Test
+    @DisplayName("Un ajuste con coeficiente 1 mientras se rescinde: el ajuste sube la versión y la rescisión da 409 y compensa")
+    void ajusteSinCambioDeCanonConcurrenteConUnaRescisionDa409() {
+        Long id = contratoRepository.save(contrato(EstadoContratoEnum.SENIADO)).getId();
+        contratoService.activarContrato(id, "sub-admin");
+        Long versionActivo = leer(id, Contrato::getVersion);
+        // ICL sin variación: el ajuste 1 no cambia el canon, solo agrega el ajuste y las cuotas 4 a 6
+        when(indiceService.calcularAjuste(any(), any(), any(), any())).thenReturn(ResultadoAjusteDTO.builder()
+                .tipoIndice(TipoIndiceEnum.ICL).valorIndiceDesde(BigDecimal.TEN).valorIndiceHasta(BigDecimal.TEN)
+                .coeficiente(new BigDecimal("1.00000000")).montoAnterior(new BigDecimal("500000.00"))
+                .montoNuevo(new BigDecimal("500000.00")).porcentajeVariacion(BigDecimal.ZERO)
+                .origen(OrigenDatoEnum.BCRA).build());
+        propiedadEn(EstadoPropiedadEnum.ALQUILADA);
+        // Mientras la rescisión espera el PATCH que libera la propiedad, el proceso periódico aplica el ajuste 1
+        when(catalogoClient.actualizarEstadoPropiedad(eq(PROPIEDAD), eq(EstadoPropiedadEnum.DISPONIBLE), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    contratoService.aplicarAjuste(id, null, "SISTEMA");
+                    return null;
+                });
+
+        assertThrows(ObjectOptimisticLockingFailureException.class, () -> contratoService.rescindirContrato(id,
+                RescindirContratoRequest.builder().fechaRescision(LocalDate.of(2026, 8, 5)).build(), "sub-admin"));
+
+        verify(catalogoClient).compensarEstadoPropiedad(PROPIEDAD, EstadoPropiedadEnum.DISPONIBLE,
+                EstadoPropiedadEnum.ALQUILADA, INQUILINO, GARANTE);
+        assertTrue(leer(id, Contrato::getVersion) > versionActivo, "el ajuste tiene que subir la versión del contrato");
+        assertEquals(EstadoContratoEnum.ACTIVO, leer(id, Contrato::getEstado));
+        assertEquals(Integer.valueOf(1), leer(id, c -> c.getAjustes().size()));
+        assertEquals(List.of(1, 2, 3, 4, 5, 6), leer(id, c -> c.getCuotas().stream().map(q -> q.getNroCuota()).toList()));
+        assertEquals(Boolean.TRUE, leer(id, c -> c.getCuotas().stream().allMatch(q -> q.getEstado() == EstadoCuotaEnum.PENDIENTE)));
     }
 
     @Test

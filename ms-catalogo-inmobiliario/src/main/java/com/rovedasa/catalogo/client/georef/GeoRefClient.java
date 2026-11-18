@@ -47,7 +47,7 @@ public class GeoRefClient {
     /**
      * Normaliza la dirección con GET /direcciones. Si viene la ciudad, filtra por localidad censal.
      *
-     * @return la dirección normalizada, o vacío si GeoRef no la encontró o no tiene coordenadas
+     * @return la dirección normalizada, o vacío si GeoRef no la encontró, no tiene coordenadas o no trae la altura
      * @throws ServicioExternoNoDisponibleException si GeoRef no responde o devuelve un error
      */
     public Optional<DireccionNormalizada> normalizar(String calle, String numero, String provincia, String ciudad) {
@@ -67,6 +67,12 @@ public class GeoRefClient {
                 || encontrada.provincia() == null || encontrada.localidadCensal() == null) {
             log.info("GeoRef devolvió la dirección {} sin ubicación o sin localidad: se considera no normalizable",
                     encontrada.nomenclatura());
+            return Optional.empty();
+        }
+        // RN-03: siempre se pide una altura; si GeoRef no la devuelve ubicó la calle entera y no la propiedad
+        if (encontrada.altura() == null || encontrada.altura().valor() == null) {
+            log.info("GeoRef devolvió la dirección {} sin la altura pedida ({}): se considera no normalizable",
+                    encontrada.nomenclatura(), numero.trim());
             return Optional.empty();
         }
 

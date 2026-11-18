@@ -75,6 +75,32 @@ class CatalogoClientTest {
     }
 
     @Test
+    void liberar_mandaElInquilinoYElGaranteParaQueElCatalogoVerifiqueQueEsElMismoContrato() {
+        armarCliente();
+        server.expect(requestTo(BASE + "/propiedades/7/estado"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"nuevoEstado\":\"DISPONIBLE\",\"estadoEsperado\":\"ALQUILADA\","
+                        + "\"inquilinoId\":3,\"garanteId\":4}", true))
+                .andRespond(withSuccess(PROPIEDAD_JSON, MediaType.APPLICATION_JSON));
+
+        client.actualizarEstadoPropiedad(7L, EstadoPropiedadEnum.DISPONIBLE, EstadoPropiedadEnum.ALQUILADA, 3L, 4L);
+        server.verify();
+    }
+
+    @Test
+    void compensar_alquiladaAReservadaTambienMandaLasPartes() {
+        armarCliente();
+        server.expect(requestTo(BASE + "/propiedades/7/estado/compensacion"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("{\"estadoActual\":\"ALQUILADA\",\"estadoAnterior\":\"RESERVADA\","
+                        + "\"inquilinoId\":3,\"garanteId\":4}", true))
+                .andRespond(withSuccess(PROPIEDAD_JSON, MediaType.APPLICATION_JSON));
+
+        client.compensarEstadoPropiedad(7L, EstadoPropiedadEnum.ALQUILADA, EstadoPropiedadEnum.RESERVADA, 3L, 4L);
+        server.verify();
+    }
+
+    @Test
     void compensar_usaElEndpointDeCompensacionConLasPartes() {
         armarCliente();
         server.expect(requestTo(BASE + "/propiedades/7/estado/compensacion"))
