@@ -28,10 +28,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- Excepciones de persistencia que mapea el GlobalExceptionHandler (409). Las versiones salen del BOM
+             de Spring Boot; los dos servicios ya las traen con spring-boot-starter-data-jpa. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
+        </dependency>
+        <!-- Solo para probar el mapeo de ObjectOptimisticLockingFailureException (subclase de la de spring-tx) -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-orm</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

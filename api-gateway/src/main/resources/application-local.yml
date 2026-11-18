@@ -1,0 +1,6 @@
+# Perfil local: solo para depurar en el host. Muestra las decisiones de la cadena de seguridad y del ruteo.
+logging:
+  level:
+    com.rovedasa: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: DEBUG
