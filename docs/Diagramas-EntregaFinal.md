@@ -12,14 +12,14 @@
 
 | Aspecto | Diseño 1ra Entrega (`Diagramas.md`) | Implementación Entrega Final (`Diagramas-EntregaFinal.md`) | Justificación / Valor aportado |
 | :--- | :--- | :--- | :--- |
-| **Rutas y capacidades del API Gateway** | Enrutaba `/api/propiedades/**`, `/api/personas/**`, `/api/contratos/**` y `/api/cuotas/**`. | Suma ruta `/api/indices/**`, **Swagger UI unificado** (`/swagger-ui.html`, `/v3/api-docs/catalogo` y `/v3/api-docs/contratos`), **CORS global** y `/actuator/loggers` protegido para `ADMINISTRADOR`. | Centraliza la documentación OpenAPI de ambos microservicios detrás del puerto `:8080`, evita errores de CORS y habilita trazabilidad/loggers en caliente. |
-| **Auth inter-servicio (`ms-contratos` → `ms-catalogo`)** | Planteado con `OAuth2 Client Credentials` (`backend-services`). | En ejecución usa **TokenRelay** (`RestClientConfig` propaga el JWT `ADMINISTRADOR` recibido + `X-Correlation-ID` con `JdkClientHttpRequestFactory` para soportar HTTP `PATCH`). `backend-services` queda configurado en `realm-export.json` con rol `ADMINISTRADOR`. | Como toda transición de contrato la dispara un usuario `ADMINISTRADOR`, reenviar su token mantiene identidad y auditoría; además se incorporó **compensación Saga** ante fallas locales post-`PATCH`. |
+| **Rutas y capacidades del API Gateway** | Enrutaba `/api/propiedades/**`, `/api/personas/**`, `/api/contratos/**` y `/api/cuotas/**`. | Suma ruta `/api/indices/**`, **Swagger UI unificado** (`/swagger-ui.html`, `/v3/api-docs/catalogo` y `/v3/api-docs/contratos`), **CORS global**, `/actuator/loggers` protegido para `ADMINISTRADOR` y errores propios con `ApiError` (401 con `WWW-Authenticate`, 403, 404 de ruta inexistente, 503 de servicio caído, 504 por timeout de 20 s). El header `Authorization` pasa tal cual al microservicio (no hay filtro `TokenRelay`). | Centraliza la documentación OpenAPI de ambos microservicios detrás del puerto `:8080`, evita errores de CORS y habilita trazabilidad/loggers en caliente. |
+| **Auth inter-servicio (`ms-contratos` → `ms-catalogo`)** | Planteado con `OAuth2 Client Credentials` (`backend-services`). | Implementado como se planteó: `ProveedorTokenServicio` pide el token de la cuenta de servicio `backend-services` (rol `ADMINISTRADOR` en `realm-export.json`) por **client credentials** con `RestClient` al endpoint de tokens de Keycloak y lo reutiliza hasta 30 s antes de que venza. `RestClientConfig` lo pone en `Authorization` junto con el `X-Correlation-ID` (`JdkClientHttpRequestFactory` para soportar HTTP `PATCH`); si el catálogo responde 401, renueva el token y reintenta una vez. El secreto sale de la variable `KEYCLOAK_CLIENT_SECRET`. | Las llamadas al catálogo no dependen del token del usuario ni de que haya uno (el ajuste programado `@Scheduled` corre sin usuario); el catálogo las autoriza por el rol de la cuenta de servicio. Además se incorporó **compensación Saga** ante fallas locales post-`PATCH`. |
 | **Caché de índices (`db_contratos`)** | Entidad `IndiceIclCache` / tabla `indices_icl_cache` (solo `fecha` y `valor`). | Generalizada a entidad `IndiceCache` / tabla **`indices_cache`** con `tipo_indice` (`ICL`, `IPC`) y `UK (tipo_indice, fecha)`. | Permite cumplir el alcance obligatorio de ICL y sumar soporte de IPC reutilizando el mismo caché y cliente BCRA. |
 | **Entidad `Ajuste`** | Solo fechas, valores de índice, montos y `%` de variación. | Suma `tipo_indice`, `coeficiente` (`NUMERIC(19,6)`) y `origen` (`BCRA` o `CACHE_CONTINGENCIA`). | Auditoría completa: deja trazado si cada ajuste usó datos en vivo del BCRA o el caché de contingencia. |
 | **Entidad `Contrato`** | Incluía lógica de negocio (`seniar()`, `activar()`, etc.) y un campo `estadoActual: EstadoContrato`. | Entidad JPA limpia con `tipo_indice` (default `ICL`), `motivo_cancelacion`, `senia_retenida`, `penalizacion_rescision`, `@Version`, `fecha_alta` y `fecha_modificacion`. | Separa persistencia (JPA) del comportamiento (Patrón State con beans Spring stateless). |
 | **Patrón State (`ms-contratos`)** | Clases `Creado`, `Senado`, `Activo`, `Cancelado`, `Rescindido`, `Finalizado` instanciadas por estado. | Beans `@Component` stateless (`EstadoCreado`, `EstadoSeniado`, `EstadoActivo`, `EstadoCancelado`, `EstadoRescindido`, `EstadoFinalizado`) resueltos vía **`EstadoContratoFactory`** + helper `GeneradorCuotasTramo` + `ContratoService` (orquestador Saga y `Clock`). | Evita recrear/inyectar dependencias dentro de entidades JPA y facilita testing determinístico con `Clock`. |
 | **Evaluación del garante (`ms-catalogo`)** | Método `esGaranteSolvente()` sobre `Persona`. | Desacoplado en `EvaluacionGaranteService` + `SolvenciaGaranteService` + `EvaluadorSolvencia` (RN-07: `situación <= 2` y `cheques == 0`). `Persona` registra `situacion_crediticia_bcra`, `cheques_rechazados` y `fecha_consulta_bcra`. | Separa reglas puras de dominio del cliente HTTP BCRA y la transacción corta en BD. |
-| **Librería `inmobiliaria-commons`** | `EstadoContratoEnum`, `EstadoCuotaEnum` y `CuotaResumenDTO` compartidos; `ActualizarEstadoPropiedadDTO` sin `garanteId`. | `EstadoContratoEnum`, `EstadoCuotaEnum` (con `PAGADA`) y `CuotaResumenDTO` movidos a `ms-contratos`. `commons` conserva **solo** lo inter-servicio (`PropiedadDTO`, `ActualizarEstadoPropiedadDTO` con `garanteId`, `ValidacionGaranteDTO`, `EstadoPropiedadEnum`) y lo transversal (`ApiError`, `GlobalExceptionHandler`, `CorrelationIdFilter`, `KeycloakRoleConverter`). | Evita acoplar `ms-catalogo` y el módulo común a tipos internos de contratos/cuotas. |
+| **Librería `inmobiliaria-commons`** | `EstadoContratoEnum`, `EstadoCuotaEnum` y `CuotaResumenDTO` compartidos; `ActualizarEstadoPropiedadDTO` sin `garanteId`. | `EstadoContratoEnum`, `EstadoCuotaEnum` (con `PAGADA`) y `CuotaResumenDTO` movidos a `ms-contratos`. `commons` conserva **solo** lo inter-servicio (`PropiedadDTO`, `ActualizarEstadoPropiedadDTO` con `garanteId` y `estadoEsperado`, `CompensarEstadoPropiedadDTO` de la Saga, `ValidacionGaranteDTO`, `EstadoPropiedadEnum`) y lo transversal (`ApiError`, `GlobalExceptionHandler`, `CorrelationIdFilter`, `KeycloakRoleConverter`). | Evita acoplar `ms-catalogo` y el módulo común a tipos internos de contratos/cuotas. |
 
 ---
 
@@ -105,10 +105,11 @@ Rel(inquilino, api_gateway, "Consulta sus recursos (solo GET)", "HTTP / REST + J
 Rel(admin, grafana, "Audita logs por X-Correlation-ID", "HTTP :3000")
 
 Rel(api_gateway, keycloak, "Descarga claves públicas (JWKS)", "HTTP /certs")
-Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/**, /api/personas/** y /v3/api-docs/catalogo", "HTTP + TokenRelay + X-Correlation-ID")
-Rel(api_gateway, ms_contratos, "Enruta /api/contratos/**, /api/cuotas/**, /api/indices/** y /v3/api-docs/contratos", "HTTP + TokenRelay + X-Correlation-ID")
+Rel(api_gateway, ms_catalogo, "Enruta /api/propiedades/**, /api/personas/** y /v3/api-docs/catalogo", "HTTP + Authorization del cliente + X-Correlation-ID")
+Rel(api_gateway, ms_contratos, "Enruta /api/contratos/**, /api/cuotas/**, /api/indices/** y /v3/api-docs/contratos", "HTTP + Authorization del cliente + X-Correlation-ID")
 
-Rel(ms_contratos, ms_catalogo, "Valida partes/propiedad, solicita evaluación BCRA y cambia estado (PATCH + Saga)", "HTTP RestClient (JdkClientHttpRequestFactory + TokenRelay JWT)")
+Rel(ms_contratos, keycloak, "Obtiene el token de la cuenta de servicio backend-services (cacheado)", "OAuth2 Client Credentials (RestClient)")
+Rel(ms_contratos, ms_catalogo, "Valida partes/propiedad, solicita evaluación BCRA y cambia estado (PATCH + Saga)", "HTTP RestClient (JdkClientHttpRequestFactory) + token de servicio + X-Correlation-ID")
 
 Rel(ms_catalogo, db_catalogo, "Lee y escribe", "JPA / JDBC")
 Rel(ms_contratos, db_contratos, "Lee y escribe", "JPA / JDBC")
@@ -352,6 +353,13 @@ package "inmobiliaria-commons (JAR Maven)" {
     }
     class ActualizarEstadoPropiedadDTO <<DTO>> {
         + nuevoEstado : EstadoPropiedadEnum
+        + estadoEsperado : EstadoPropiedadEnum
+        + inquilinoId : Long
+        + garanteId : Long
+    }
+    class CompensarEstadoPropiedadDTO <<DTO>> {
+        + estadoActual : EstadoPropiedadEnum
+        + estadoAnterior : EstadoPropiedadEnum
         + inquilinoId : Long
         + garanteId : Long
     }
@@ -465,12 +473,28 @@ package "ms-contratos" {
     }
     interface EstadoContrato <<interface>> {
         + getTipoEstado() : EstadoContratoEnum
+        + estadoPropiedadOcupada() : EstadoPropiedadEnum
         + seniar(c : Contrato, monto : BigDecimal, limite : LocalDate, hoy : LocalDate) : void
         + activar(c : Contrato, hoy : LocalDate) : List<Cuota>
         + cancelar(c : Contrato, motivo : String, retenerSenia : boolean) : void
+        + validarAjuste(c : Contrato, hoy : LocalDate, desde : LocalDate, hasta : LocalDate) : PeriodoAjuste
+        + ajustePendiente(c : Contrato, hoy : LocalDate) : Optional<PeriodoAjuste>
         + aplicarAjuste(c : Contrato, ajuste : Ajuste) : List<Cuota>
-        + rescindir(c : Contrato, fechaRescision : LocalDate) : BigDecimal
+        + rescindir(c : Contrato, fecha : LocalDate, hoy : LocalDate) : BigDecimal
         + finalizar(c : Contrato, hoy : LocalDate) : void
+    }
+    class CalendarioContrato <<utilidad>> {
+        + {static} totalMeses(inicio : LocalDate, fin : LocalDate) : int
+        + {static} inicioPeriodo(c : Contrato, i : int) : LocalDate
+        + {static} vencimiento(inicioPeriodo : LocalDate, dia : int) : LocalDate
+        + {static} hito(c : Contrato, k : int) : LocalDate
+        + {static} siguienteAjuste(c : Contrato) : Optional<PeriodoAjuste>
+        + {static} ajustePendiente(c : Contrato, hoy : LocalDate) : Optional<PeriodoAjuste>
+    }
+    class PeriodoAjuste <<record>> {
+        + numero : int
+        + desde : LocalDate
+        + hasta : LocalDate
     }
     class EstadoContratoFactory {
         + obtenerEstado(contrato : Contrato) : EstadoContrato
@@ -481,7 +505,9 @@ package "ms-contratos" {
     class EstadoCancelado implements EstadoContrato
     class EstadoRescindido implements EstadoContrato
     class EstadoFinalizado implements EstadoContrato
-    class GeneradorCuotasTramo
+    class GeneradorCuotasTramo {
+        + {static} generarTramo(c : Contrato, tramo : int, ajuste : Ajuste, fechaEmision : LocalDate) : List<Cuota>
+    }
 
     class Contrato {
         - id : Long
@@ -532,7 +558,10 @@ package "ms-contratos" {
         - montoBase : BigDecimal
         - estado : EstadoCuotaEnum
         - fechaPago : LocalDate
+        - fechaEmision : LocalDate
+        - version : Long
         + estaVencida(fechaRef : LocalDate) : boolean
+        + fechaInicioMora() : LocalDate
         + calcularMora(fechaRef : LocalDate, pct : BigDecimal) : BigDecimal
         + calcularTotalConMora(fechaRef : LocalDate, pct : BigDecimal) : BigDecimal
         + anular() : void
@@ -556,6 +585,10 @@ package "ms-contratos" {
     Cuota --> EstadoCuotaEnum
     EstadoSeniado ..> GeneradorCuotasTramo
     EstadoActivo ..> GeneradorCuotasTramo
+    EstadoActivo ..> CalendarioContrato
+    EstadoActivo ..> PeriodoAjuste
+    GeneradorCuotasTramo ..> CalendarioContrato
+    CalendarioContrato ..> PeriodoAjuste
     EstadoContratoFactory o--> "6" EstadoContrato
     ContratoService --> EstadoContratoFactory
     ContratoService --> CatalogoClient
@@ -566,6 +599,7 @@ package "ms-contratos" {
 
 CatalogoClient ..> PropiedadDTO : consume
 CatalogoClient ..> ActualizarEstadoPropiedadDTO : envía PATCH
+CatalogoClient ..> CompensarEstadoPropiedadDTO : envía PATCH de compensación
 CatalogoClient ..> ValidacionGaranteDTO : consume
 @enduml
 ```

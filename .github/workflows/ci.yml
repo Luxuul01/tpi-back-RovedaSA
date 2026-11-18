@@ -3,8 +3,8 @@ name: Java CI with Maven
 on:
   push:
     branches: [ "main", "develop" ]
+  # Todos los pull requests, sin importar la rama de destino
   pull_request:
-    branches: [ "main", "develop" ]
 
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
@@ -20,5 +20,12 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Build and Test with Maven
-      run: mvn -B clean verify --file pom.xml
+    # Mismo Maven que en desarrollo y en los Dockerfiles (wrapper, versión fija en .mvn/wrapper)
+    - name: Build and Test with Maven Wrapper
+      run: |
+        chmod +x mvnw
+        ./mvnw -B clean verify --file pom.xml
+
+    # El compose tiene que seguir siendo válido sin configurar nada (sin .env)
+    - name: Validate docker compose
+      run: docker compose config -q
