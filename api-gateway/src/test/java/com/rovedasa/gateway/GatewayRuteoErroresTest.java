@@ -36,6 +36,10 @@ class GatewayRuteoErroresTest {
 
     private static final HttpServer CATALOGO_FALSO = iniciarCatalogoFalso();
     private static final int PUERTO_CERRADO = puertoLibre();
+    // JWT RS256 bien formado (header {"alg":"RS256","kid":"k1"}, exp en 2100) con una firma cualquiera: para
+    // validarlo el Gateway tiene que bajar el JWKS de Keycloak
+    private static final String TOKEN_CON_FORMATO_VALIDO =
+            "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiJ0ZXN0IiwiZXhwIjo0MTAyNDQ0ODAwfQ.ZmlybWE";
 
     @Autowired
     private ApplicationContext contexto;
@@ -47,6 +51,9 @@ class GatewayRuteoErroresTest {
         registro.add("rovedasa-gw.url-microservicio-catalogo",
                 () -> "http://localhost:" + CATALOGO_FALSO.getAddress().getPort());
         registro.add("rovedasa-gw.url-microservicio-contratos", () -> "http://localhost:" + PUERTO_CERRADO);
+        // Keycloak apagado: un token real (no mockJwt) no se puede validar porque no hay de dónde bajar el JWKS
+        registro.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
+                () -> "http://localhost:" + PUERTO_CERRADO + "/realms/rovedasa-realm/protocol/openid-connect/certs");
     }
 
     @BeforeEach
@@ -118,6 +125,36 @@ class GatewayRuteoErroresTest {
     }
 
     @Test
+    @DisplayName("El microservicio corta la conexión sin responder: 502 con ApiError (no el 500 por defecto)")
+    void conexionCortadaPorElMicroservicioDa502ConApiError() {
+        cliente.mutateWith(mockJwt().authorities(new SimpleGrantedAuthority("ROLE_ADMINISTRADOR")))
+                .get().uri("/api/propiedades/corte")
+                .header("X-Correlation-ID", "corr-502")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.BAD_GATEWAY)
+                .expectHeader().valuesMatch("X-Correlation-ID", "corr-502")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(502)
+                .jsonPath("$.path").isEqualTo("/api/propiedades/corte")
+                .jsonPath("$.correlationId").isEqualTo("corr-502");
+    }
+
+    @Test
+    @DisplayName("Keycloak no responde al pedir el JWKS: 503 con ApiError (no un 401 ni el 500 por defecto)")
+    void servidorDeIdentidadCaidoDa503ConApiError() {
+        cliente.get().uri("/api/contratos")
+                .header("Authorization", "Bearer " + TOKEN_CON_FORMATO_VALIDO)
+                .header("X-Correlation-ID", "corr-jwks")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                .expectHeader().valuesMatch("X-Correlation-ID", "corr-jwks")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(503)
+                .jsonPath("$.message").isEqualTo("No se pudo validar el token: el servidor de identidad no responde")
+                .jsonPath("$.correlationId").isEqualTo("corr-jwks");
+    }
+
+    @Test
     @DisplayName("Sin token: 401 con WWW-Authenticate: Bearer y ApiError")
     void sinTokenDa401ConWwwAuthenticate() {
         cliente.get().uri("/api/contratos")
@@ -142,6 +179,10 @@ class GatewayRuteoErroresTest {
     private static HttpServer iniciarCatalogoFalso() {
         try {
             HttpServer servidor = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+            // Simula un microservicio que se cae a mitad del request: cierra la conexión sin responder
+            servidor.createContext("/api/propiedades/corte", intercambio -> {
+                throw new IllegalStateException("corte simulado de la conexión");
+            });
             servidor.createContext("/", intercambio -> {
                 String recibido = intercambio.getRequestHeaders().getFirst("X-Correlation-ID");
                 byte[] cuerpo = ("recibido=" + recibido).getBytes(StandardCharsets.UTF_8);

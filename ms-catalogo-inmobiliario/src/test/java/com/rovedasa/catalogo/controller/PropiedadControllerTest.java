@@ -4,6 +4,7 @@ import com.rovedasa.catalogo.config.SecurityConfig;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
 import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
+import com.rovedasa.catalogo.exception.ConflictoException;
 import com.rovedasa.catalogo.exception.EstadoPropiedadInesperadoException;
 import com.rovedasa.catalogo.exception.ServicioExternoNoDisponibleException;
 import com.rovedasa.catalogo.service.PropiedadService;
@@ -14,6 +15,8 @@ import com.rovedasa.commons.enums.EstadoPropiedadEnum;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -159,6 +162,27 @@ class PropiedadControllerTest {
                 .andExpect(jsonPath("$.message").value("La propiedad está en estado RESERVADA y se esperaba DISPONIBLE"));
     }
 
+    // Contrato P-Q de la Saga: ms-contratos manda su inquilinoId y la propiedad está tomada por otro contrato
+    @Test
+    void patchEstadoConOtroInquilinoDevuelve409ConElMensajeYPasaElInquilinoAlServicio() throws Exception {
+        when(propiedadService.actualizarEstado(eq(10L), any(ActualizarEstadoPropiedadDTO.class)))
+                .thenThrow(new ConflictoException("La propiedad está tomada por otro contrato"));
+
+        mockMvc.perform(patch("/api/propiedades/{id}/estado", 10L).with(conRol("ADMINISTRADOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nuevoEstado\": \"ALQUILADA\", \"estadoEsperado\": \"RESERVADA\", "
+                                + "\"inquilinoId\": 99, \"garanteId\": 98}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value("La propiedad está tomada por otro contrato"));
+
+        ArgumentCaptor<ActualizarEstadoPropiedadDTO> solicitud =
+                ArgumentCaptor.forClass(ActualizarEstadoPropiedadDTO.class);
+        verify(propiedadService).actualizarEstado(eq(10L), solicitud.capture());
+        assertEquals(99L, solicitud.getValue().getInquilinoId());
+        assertEquals(98L, solicitud.getValue().getGaranteId());
+    }
+
     @Test
     void patchEstadoSinNuevoEstadoDevuelve400() throws Exception {
         mockMvc.perform(patch("/api/propiedades/{id}/estado", 10L).with(conRol("ADMINISTRADOR"))
@@ -248,6 +272,23 @@ class PropiedadControllerTest {
     }
 
     @Test
+    void compensacionConOtroInquilinoDevuelve409ConElMensajeYPasaElInquilinoAlServicio() throws Exception {
+        when(propiedadService.compensarEstado(eq(10L), any(CompensarEstadoPropiedadDTO.class)))
+                .thenThrow(new ConflictoException("La propiedad está tomada por otro contrato"));
+
+        mockMvc.perform(patchCompensacion(10L, "{\"estadoActual\": \"RESERVADA\", \"estadoAnterior\": "
+                        + "\"DISPONIBLE\", \"inquilinoId\": 99}").with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value("La propiedad está tomada por otro contrato"));
+
+        ArgumentCaptor<CompensarEstadoPropiedadDTO> solicitud =
+                ArgumentCaptor.forClass(CompensarEstadoPropiedadDTO.class);
+        verify(propiedadService).compensarEstado(eq(10L), solicitud.capture());
+        assertEquals(99L, solicitud.getValue().getInquilinoId());
+    }
+
+    @Test
     void compensacionDePropiedadInexistenteDevuelve404() throws Exception {
         when(propiedadService.compensarEstado(eq(99L), any(CompensarEstadoPropiedadDTO.class)))
                 .thenThrow(new RecursoNoEncontradoException("No existe la propiedad con ID 99"));
@@ -289,6 +330,32 @@ class PropiedadControllerTest {
                 .andExpect(jsonPath("$.validaciones.calle").exists())
                 .andExpect(jsonPath("$.validaciones.propietarioId").exists())
                 .andExpect(jsonPath("$.validaciones.superficieTotalM2").exists());
+
+        verifyNoInteractions(propiedadService);
+    }
+
+    // RN-03: con "0" o "S/N" GeoRef normalizaba la calle entera (otra zona) y con "-5" ubicaba la altura 5
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "S/N", "-5", "090", "12B", "9.5"})
+    void postConNumeroQueNoEsUnaAlturaValidaDevuelve400(String numero) throws Exception {
+        String cuerpo = CUERPO_ALTA.replace("\"numero\": \"900\"", "\"numero\": \"" + numero + "\"");
+
+        mockMvc.perform(post("/api/propiedades").with(conRol("ADMINISTRADOR"))
+                        .contentType(MediaType.APPLICATION_JSON).content(cuerpo))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.validaciones.numero", containsString("entero positivo")));
+
+        verifyNoInteractions(propiedadService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "S/N", "-5"})
+    void putConNumeroQueNoEsUnaAlturaValidaDevuelve400(String numero) throws Exception {
+        String cuerpo = CUERPO_MODIFICAR.replace("\"numero\": \"900\"", "\"numero\": \"" + numero + "\"");
+
+        mockMvc.perform(put(10L, cuerpo).with(conRol("ADMINISTRADOR")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.validaciones.numero", containsString("entero positivo")));
 
         verifyNoInteractions(propiedadService);
     }

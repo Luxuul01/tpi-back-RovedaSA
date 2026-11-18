@@ -120,6 +120,44 @@ class GeoRefClientTest {
         servidor.verify();
     }
 
+    // RN-03: con altura 0 GeoRef ubica la calle entera, sin altura; no sirve para tasar la propiedad
+    @Test
+    void resultadoSinAlturaDevuelveVacio() {
+        String respuestaSinAltura = """
+                {"cantidad":1,"direcciones":[{"altura":{"unidad":null,"valor":null},
+                "calle":{"categoria":"CALLE","id":"1401401026225","nombre":"INDEPENDENCIA"},
+                "departamento":{"id":"14014","nombre":"Capital"},
+                "localidad_censal":{"id":"14014010","nombre":"Córdoba"},
+                "nomenclatura":"INDEPENDENCIA, Capital, Córdoba","piso":null,
+                "provincia":{"id":"14","nombre":"Córdoba"},
+                "ubicacion":{"lat":-31.4199,"lon":-64.1888}}],"inicio":0,"total":1}
+                """;
+        servidor.expect(requestTo(URL_BASE
+                        + "/direcciones?direccion=Independencia%200&provincia=C%C3%B3rdoba"
+                        + "&localidad_censal=C%C3%B3rdoba&max=1"))
+                .andRespond(withSuccess(respuestaSinAltura, MediaType.APPLICATION_JSON));
+
+        assertTrue(geoRefClient.normalizar("Independencia", "0", "Córdoba", "Córdoba").isEmpty());
+        servidor.verify();
+    }
+
+    @Test
+    void resultadoSinElCampoAlturaDevuelveVacio() {
+        String respuestaSinCampoAltura = """
+                {"cantidad":1,"direcciones":[{
+                "departamento":{"id":"14014","nombre":"Capital"},
+                "localidad_censal":{"id":"14014010","nombre":"Córdoba"},
+                "nomenclatura":"INDEPENDENCIA, Capital, Córdoba",
+                "provincia":{"id":"14","nombre":"Córdoba"},
+                "ubicacion":{"lat":-31.4199,"lon":-64.1888}}],"inicio":0,"total":1}
+                """;
+        servidor.expect(requestTo(URL_INDEPENDENCIA_900))
+                .andRespond(withSuccess(respuestaSinCampoAltura, MediaType.APPLICATION_JSON));
+
+        assertTrue(geoRefClient.normalizar("Independencia", "900", "Córdoba", "Córdoba").isEmpty());
+        servidor.verify();
+    }
+
     @Test
     void error500LanzaServicioNoDisponible() {
         servidor.expect(requestTo(URL_INDEPENDENCIA_900)).andRespond(withServerError());

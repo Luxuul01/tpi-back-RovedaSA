@@ -34,6 +34,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -60,8 +61,10 @@ public class GlobalExceptionHandler {
     static final String MENSAJE_PARAMETROS_INVALIDOS = "Parámetros inválidos en la solicitud";
     static final String MENSAJE_CONCURRENCIA =
             "El recurso fue modificado por otra operación al mismo tiempo; volvé a consultarlo y reintentá";
-    static final String MENSAJE_INTEGRIDAD =
-            "La operación entra en conflicto con datos ya registrados (por ejemplo, un valor duplicado)";
+    static final String MENSAJE_INTEGRIDAD = "Conflicto con datos ya registrados";
+    static final String MENSAJE_DATO_FUERA_DE_RANGO = "Algún dato está fuera del rango permitido";
+    // SQLState clase 22 ("data exception"): valor fuera de rango, carácter inválido (NUL), fecha imposible
+    private static final String CLASE_SQLSTATE_DATO_INVALIDO = "22";
     static final String MENSAJE_ERROR_INTERNO = "Ocurrió un error inesperado en el servidor. "
             + "Comunicate con soporte e indicá el identificador de error (correlationId).";
     private static final String FORMATO_FECHA = "yyyy-MM-dd";
@@ -190,9 +193,16 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.CONFLICT, MENSAJE_CONCURRENCIA, request);
     }
 
-    // Unique o FK violada en la base. El detalle (SQL, nombre de la constraint) solo va al log
+    // Unique o FK violada en la base (409). Si la base rechazó un valor por su contenido (SQLState clase 22)
+    // no es un conflicto sino un dato inválido (400). El detalle (SQL, nombre de la constraint) solo va al log
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleIntegridad(DataIntegrityViolationException ex, HttpServletRequest request) {
+        SQLException sql = sqlExceptionRaiz(ex);
+        if (sql != null && sql.getSQLState() != null
+                && sql.getSQLState().startsWith(CLASE_SQLSTATE_DATO_INVALIDO)) {
+            log.warn("Dato rechazado por la base (SQLState {}): {}", sql.getSQLState(), sql.getMessage());
+            return responder(HttpStatus.BAD_REQUEST, MENSAJE_DATO_FUERA_DE_RANGO, request);
+        }
         log.warn("Violación de integridad de datos: {}", causaRaiz(ex).getMessage());
         return responder(HttpStatus.CONFLICT, MENSAJE_INTEGRIDAD, request);
     }
@@ -312,6 +322,20 @@ public class GlobalExceptionHandler {
             }
         }
         return null;
+    }
+
+    // La SQLException más profunda de la cadena (la del driver, que trae el SQLState real)
+    private static SQLException sqlExceptionRaiz(Throwable ex) {
+        SQLException encontrada = null;
+        for (Throwable actual = ex; actual != null; actual = actual.getCause()) {
+            if (actual instanceof SQLException sql) {
+                encontrada = sql;
+            }
+            if (actual.getCause() == actual) {
+                break;
+            }
+        }
+        return encontrada;
     }
 
     private static Throwable causaRaiz(Throwable ex) {

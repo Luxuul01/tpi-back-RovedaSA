@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -118,8 +118,11 @@ public class EstadoActivo implements EstadoContrato {
 
     /**
      * RN-14: la fecha de rescisión va entre fechaInicio y hoy (como mucho la fecha de fin): no puede ser futura,
-     * porque la rescisión libera la propiedad en el acto. Penalización de 1,5 cánones con menos de 6 meses de
-     * antigüedad y de 1 canon con 6 o más. Anula las cuotas PENDIENTE que vencen después de la fecha de rescisión.
+     * porque la rescisión libera la propiedad en el acto. Si a la fecha de rescisión ya correspondía un ajuste que
+     * no se aplicó, se rechaza: sus cuotas están devengadas y no se emitieron. Penalización de 1,5 cánones si la
+     * fecha de rescisión es anterior a fechaInicio + 6 meses (misma convención plusMonths que el calendario) y de
+     * 1 canon si no; el canon es el vigente a la fecha de rescisión (el del tramo que la contiene).
+     * Anula las cuotas PENDIENTE que vencen después de la fecha de rescisión.
      */
     @Override
     public BigDecimal rescindir(Contrato contrato, LocalDate fechaRescision, LocalDate fechaActual) {
@@ -145,12 +148,13 @@ public class EstadoActivo implements EstadoContrato {
                     contrato.getNroContrato(), inicio, maxima, antesDelFin ? "hoy" : "fecha de fin"));
         }
 
-        long mesesTranscurridos = ChronoUnit.MONTHS.between(inicio, fechaRescision);
-        BigDecimal factorMulta = mesesTranscurridos < MESES_UMBRAL_MULTA_ALTA
+        rechazarSiHayAjustePendiente(contrato, fechaRescision, "rescindir");
+
+        BigDecimal factorMulta = fechaRescision.isBefore(inicio.plusMonths(MESES_UMBRAL_MULTA_ALTA))
                 ? FACTOR_MULTA_TEMPRANA
                 : FACTOR_MULTA_ESTANDAR;
 
-        BigDecimal penalizacion = contrato.getMontoActual()
+        BigDecimal penalizacion = canonVigente(contrato, fechaRescision)
                 .multiply(factorMulta)
                 .setScale(2, RoundingMode.HALF_UP);
         validarMonto(penalizacion, "La penalización por rescisión", contrato);
@@ -167,13 +171,14 @@ public class EstadoActivo implements EstadoContrato {
         contrato.setPenalizacionRescision(penalizacion);
         contrato.setEstado(EstadoContratoEnum.RESCINDIDO);
 
-        log.info("Contrato {} pasó de ACTIVO a RESCINDIDO (antigüedad={} meses, penalización={}, cuotasAnuladas={})",
-                contrato.getNroContrato(), mesesTranscurridos, penalizacion, cuotasAnuladas);
+        log.info("Contrato {} pasó de ACTIVO a RESCINDIDO (factor de multa={}, penalización={}, cuotasAnuladas={})",
+                contrato.getNroContrato(), factorMulta, penalizacion, cuotasAnuladas);
         return penalizacion;
     }
 
     /**
-     * RN-15: solo desde la fecha de fin. Las cuotas cuyo período empezó antes de la fecha de fin están devengadas
+     * RN-15: solo desde la fecha de fin y con todos los ajustes del contrato aplicados (si falta uno, sus cuotas
+     * devengadas nunca se emitieron y se rechaza). Las cuotas cuyo período empezó antes de la fecha de fin están devengadas
      * y no se anulan aunque venzan después (01/12 → 20/12 con vencimiento el día 25: la del 25/12 se cobra).
      * Solo se anulan, como defensa, las PENDIENTE cuyo período empieza en o después de la fecha de fin, que con
      * la generación por tramos no deberían existir.
@@ -188,6 +193,7 @@ public class EstadoActivo implements EstadoContrato {
                     "No se puede finalizar el contrato %s antes de su fecha de vencimiento (%s)",
                     contrato.getNroContrato(), contrato.getFechaFin()));
         }
+        rechazarSiHayAjustePendiente(contrato, fechaActual, "finalizar");
 
         int cuotasAnuladas = 0;
         for (Cuota cuota : contrato.getCuotas()) {
@@ -201,6 +207,33 @@ public class EstadoActivo implements EstadoContrato {
 
         log.info("Contrato {} pasó de ACTIVO a FINALIZADO por cumplimiento de plazo en fecha {} (cuotasAnuladas={})",
                 contrato.getNroContrato(), fechaActual, cuotasAnuladas);
+    }
+
+    /**
+     * Si a la fecha de corte ya correspondía un ajuste (hito ≤ fecha de corte) que no se aplicó, las cuotas de su
+     * tramo están devengadas pero no se emitieron: rescindir o finalizar así las perdería. Se pide aplicarlo antes.
+     */
+    private static void rechazarSiHayAjustePendiente(Contrato contrato, LocalDate fechaCorte, String operacion) {
+        Optional<PeriodoAjuste> pendiente = CalendarioContrato.ajustePendiente(contrato, fechaCorte);
+        if (pendiente.isPresent()) {
+            PeriodoAjuste periodo = pendiente.get();
+            throw new OperacionInvalidaException(String.format(
+                    "Antes de %s el contrato %s aplicá el ajuste N° %d (ventana %s → %s): sus cuotas ya están "
+                            + "devengadas y todavía no se emitieron",
+                    operacion, contrato.getNroContrato(), periodo.numero(), periodo.desde(), periodo.hasta()));
+        }
+    }
+
+    /**
+     * Canon vigente en una fecha: el del último ajuste cuyo hito (fechaIndiceHasta) no es posterior a esa fecha,
+     * o el inicial si no hay ninguno. Es el monto de las cuotas del tramo que contiene la fecha.
+     */
+    private static BigDecimal canonVigente(Contrato contrato, LocalDate fecha) {
+        return contrato.getAjustes().stream()
+                .filter(ajuste -> ajuste.getFechaIndiceHasta() != null && !ajuste.getFechaIndiceHasta().isAfter(fecha))
+                .max(Comparator.comparing(Ajuste::getFechaIndiceHasta))
+                .map(Ajuste::getMontoNuevo)
+                .orElse(contrato.getMontoInicial());
     }
 
     private static void validarMonto(BigDecimal monto, String descripcion, Contrato contrato) {

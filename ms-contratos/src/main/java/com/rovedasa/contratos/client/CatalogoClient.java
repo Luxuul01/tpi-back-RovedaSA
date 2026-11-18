@@ -90,6 +90,8 @@ public class CatalogoClient {
      * ActualizarEstadoPropiedadDTO de commons; los campos nulos no se envían).
      * Si la propiedad no está en {@code estadoEsperado}, el catálogo responde 409 y no la cambia.
      * Usado para: RESERVADA (seña), ALQUILADA (activar), DISPONIBLE (cancelar/rescindir/finalizar).
+     * ms-contratos manda siempre el inquilino y el garante del contrato: si la propiedad está RESERVADA o ALQUILADA
+     * por otro inquilino, el catálogo responde 409 y no la cambia.
      */
     public PropiedadDTO actualizarEstadoPropiedad(Long propiedadId, EstadoPropiedadEnum nuevoEstado,
                                                   EstadoPropiedadEnum estadoEsperado,
@@ -113,8 +115,9 @@ public class CatalogoClient {
      * CompensarEstadoPropiedadDTO de commons): deshace una transición
      * de la Saga, de {@code estadoActual} a {@code estadoAnterior}. 409 si la propiedad ya no está en
      * estadoActual; 400 si el par no es el inverso de una transición válida (RN-05).
-     * Para volver a ALQUILADA o a RESERVADA desde DISPONIBLE el catálogo necesita el inquilino (y el garante),
-     * porque al liberarla los borró; en las demás compensaciones van null y no se envían.
+     * ms-contratos manda siempre el inquilino y el garante del contrato: para volver a ALQUILADA o a RESERVADA
+     * desde DISPONIBLE el catálogo los necesita (al liberarla los borró), y en las demás el catálogo verifica que
+     * la propiedad siga tomada por ese inquilino (409 si es de otro contrato). Si van null no se envían.
      */
     public PropiedadDTO compensarEstadoPropiedad(Long propiedadId, EstadoPropiedadEnum estadoActual,
                                                  EstadoPropiedadEnum estadoAnterior,

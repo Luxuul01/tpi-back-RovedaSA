@@ -8,6 +8,7 @@ import com.rovedasa.catalogo.model.Persona;
 import com.rovedasa.catalogo.model.enums.TipoPersonaEnum;
 import com.rovedasa.catalogo.repository.PersonaRepository;
 import com.rovedasa.catalogo.util.NormalizadorTexto;
+import com.rovedasa.catalogo.validation.KeycloakUserIdSegunRolesValidator;
 import com.rovedasa.catalogo.validation.ValidadorCuit;
 import com.rovedasa.commons.exception.OperacionInvalidaException;
 import com.rovedasa.commons.exception.RecursoNoEncontradoException;
@@ -34,7 +35,7 @@ public class PersonaService {
     @Transactional
     public PersonaResponse registrar(CrearPersonaRequest solicitud) {
         String cuitCuil = ValidadorCuit.normalizar(solicitud.cuitCuil());
-        String keycloakUserId = NormalizadorTexto.limpiarOpcional(solicitud.keycloakUserId());
+        String keycloakUserId = normalizarKeycloakUserId(solicitud.keycloakUserId());
         String email = normalizarEmail(solicitud.email());
 
         // B4: el mensaje de la excepción lo loguea el handler y lo ve el cliente, así que no lleva el dato;
@@ -83,23 +84,41 @@ public class PersonaService {
 
     /**
      * Idempotente: si la persona ya tiene el rol, no hace nada y devuelve el estado actual.
-     * RN-17: PROPIETARIO e INQUILINO exigen que la persona esté vinculada a su usuario de Keycloak.
+     * RN-17: PROPIETARIO e INQUILINO exigen que la persona esté vinculada a su usuario de Keycloak. Si no lo
+     * está (por ejemplo un GARANTE dado de alta sin usuario), el keycloakUserId se toma del body: tiene que ser
+     * un UUID y no puede estar vinculado a otra persona. En cualquier otro caso el keycloakUserId del body se ignora.
      */
     @Transactional
-    public PersonaResponse agregarRol(Long id, TipoPersonaEnum rol) {
+    public PersonaResponse agregarRol(Long id, TipoPersonaEnum rol, String keycloakUserIdSolicitado) {
         Persona persona = buscar(id);
         if (persona.tieneRol(rol)) {
             log.debug("La persona ID: {} ya tenía el rol {}: no se modifica", id, rol);
             return PersonaMapper.aResponse(persona);
         }
         if (rol.requiereUsuarioKeycloak() && persona.getKeycloakUserId() == null) {
-            throw new OperacionInvalidaException(String.format(
-                    "No se puede agregar el rol %s a la persona ID %d: no está vinculada a un usuario de Keycloak "
-                            + "(keycloakUserId) y sin él no podría ver sus propiedades ni sus contratos", rol, id));
+            persona.setKeycloakUserId(validarKeycloakUserIdNuevo(id, rol, keycloakUserIdSolicitado));
         }
         persona.agregarRol(rol);
         log.info("Rol {} agregado a la persona ID: {}", rol, id);
         return PersonaMapper.aResponse(persona);
+    }
+
+    private String validarKeycloakUserIdNuevo(Long id, TipoPersonaEnum rol, String keycloakUserIdSolicitado) {
+        String keycloakUserId = normalizarKeycloakUserId(keycloakUserIdSolicitado);
+        if (keycloakUserId == null) {
+            throw new OperacionInvalidaException(String.format(
+                    "No se puede agregar el rol %s a la persona ID %d: no está vinculada a un usuario de Keycloak "
+                            + "(keycloakUserId) y sin él no podría ver sus propiedades ni sus contratos. Indicá el "
+                            + "keycloakUserId en el body", rol, id));
+        }
+        if (!KeycloakUserIdSegunRolesValidator.esUuid(keycloakUserId)) {
+            throw new OperacionInvalidaException(KeycloakUserIdSegunRolesValidator.MENSAJE_NO_ES_UUID);
+        }
+        if (personaRepository.existsByKeycloakUserId(keycloakUserId)) {
+            throw new RecursoDuplicadoException("Ya existe una persona vinculada al usuario de Keycloak " + keycloakUserId);
+        }
+        log.info("Persona ID: {} vinculada a su usuario de Keycloak para recibir el rol {}", id, rol);
+        return keycloakUserId;
     }
 
     private Persona buscar(Long id) {
@@ -110,6 +129,13 @@ public class PersonaService {
     // El email se guarda en minúscula para que la unicidad no dependa de mayúsculas
     private static String normalizarEmail(String email) {
         String limpio = NormalizadorTexto.limpiarOpcional(email);
+        return limpio != null ? limpio.toLowerCase(Locale.ROOT) : null;
+    }
+
+    // El claim sub de Keycloak viene en minúscula: se guarda igual para que el usuario encuentre sus datos
+    // y para que la unicidad no dependa de mayúsculas
+    private static String normalizarKeycloakUserId(String keycloakUserId) {
+        String limpio = NormalizadorTexto.limpiarOpcional(keycloakUserId);
         return limpio != null ? limpio.toLowerCase(Locale.ROOT) : null;
     }
 

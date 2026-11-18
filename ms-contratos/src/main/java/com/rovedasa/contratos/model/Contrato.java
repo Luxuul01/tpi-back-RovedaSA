@@ -159,9 +159,17 @@ public class Contrato {
         }
     }
 
+    /**
+     * Agrega el ajuste y marca el contrato como modificado. Las colecciones son mappedBy, así que Hibernate no
+     * cuenta sus filas nuevas como un cambio del contrato: un ajuste con coeficiente 1 (mismo canon) no haría
+     * UPDATE del contrato ni subiría su @Version, y una rescisión concurrente no lo detectaría. Cambiar la fecha de
+     * modificación fuerza el UPDATE con "where version = ?" y la suba de versión (al guardar, @UpdateTimestamp
+     * la vuelve a poner con la hora del guardado).
+     */
     public void agregarAjuste(Ajuste ajuste) {
         ajustes.add(ajuste);
         ajuste.setContrato(this);
+        fechaModificacion = LocalDateTime.now();
     }
 
     public void agregarCuota(Cuota cuota) {

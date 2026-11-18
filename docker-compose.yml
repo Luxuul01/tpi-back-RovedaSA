@@ -77,6 +77,8 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
+      # La imagen corre en UTC: sin esto, entre las 21 y las 24 h de Argentina "hoy" ya sería mañana
+      TZ: America/Argentina/Cordoba
       CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:-postgrespassword}
     ports:
       - "${CATALOGO_PORT:-8081}:8081"
@@ -104,6 +106,8 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${PERFIL_SERVICIOS:-docker}
+      # El reloj de la mora, las señas y los ajustes usa la zona del sistema (ver ClockConfig)
+      TZ: America/Argentina/Cordoba
       CONTRATOS_DB_PASSWORD: ${CONTRATOS_DB_PASSWORD:-postgrespassword}
       # Secreto de la cuenta de servicio backend-services: con él pide el token para llamar al catálogo
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-backend-secret-rovedasa-2026}
@@ -135,6 +139,8 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      # Misma zona que los microservicios: los timestamps de los logs y del ApiError coinciden
+      TZ: America/Argentina/Cordoba
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     volumes:

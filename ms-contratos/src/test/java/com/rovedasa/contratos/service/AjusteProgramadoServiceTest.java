@@ -14,7 +14,9 @@ import com.rovedasa.contratos.state.EstadoContratoFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -109,8 +111,8 @@ class AjusteProgramadoServiceTest {
         mockearActivos(sinIndice, conErrorDeBase, sano);
         when(indiceService.calcularAjuste(eq(TipoIndiceEnum.IPC), any(), any(), any()))
                 .thenThrow(new IndiceNoDisponibleException("IPC de octubre todavía no publicado"));
-        when(contratoRepository.saveAndFlush(conErrorDeBase))
-                .thenThrow(new DataIntegrityViolationException("uk_ajuste_contrato_fecha_hasta"));
+        when(contratoRepository.saveAndFlush(conErrorDeBase)).thenThrow(new DataAccessResourceFailureException(
+                "could not execute statement [insert into ajustes (coeficiente,contrato_id) values (?,?)]"));
 
         ResumenAjustePeriodicoResponse resumen = ajusteProgramado.ejecutarAjustePeriodico();
 
@@ -121,6 +123,10 @@ class AjusteProgramadoServiceTest {
         String motivo = resumen.getPendientes().get(0).getMotivo();
         assertTrue(motivo.contains("Ajuste N° 1 (2026-03-01 a 2026-06-01)"), motivo);
         assertTrue(motivo.contains("IPC de octubre todavía no publicado"), motivo);
+        // Un error técnico no muestra su detalle (SQL, constraint, valores): motivo genérico
+        String motivoTecnico = resumen.getPendientes().get(1).getMotivo();
+        assertEquals("Ajuste N° 1 (2026-07-01 a 2026-10-01): " + AjusteProgramadoService.MOTIVO_ERROR_INTERNO,
+                motivoTecnico);
         assertTrue(sinIndice.getAjustes().isEmpty());
         assertEquals(1, sano.getAjustes().size());
         assertEquals(6, sano.getCuotas().size());
@@ -137,6 +143,40 @@ class AjusteProgramadoServiceTest {
         assertEquals(1, resumen.getContratosRevisados());
         assertEquals(0, resumen.getAjustesAplicados());
         org.mockito.Mockito.verifyNoInteractions(indiceService);
+    }
+
+    @Test
+    @DisplayName("Dos corridas a la vez: la que pierde por unicidad no informa como pendiente el ajuste que aplicó la otra")
+    void conflictoDeUnicidadConElAjusteYaAplicadoNoQuedaPendiente() {
+        Contrato contrato = ContratoServiceTest.contratoActivo(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2028, 7, 1), 3);
+        mockearActivos(contrato);
+        // El repositorio mockeado devuelve siempre el mismo objeto: después del conflicto ya tiene el ajuste
+        // registrado, como lo vería la relectura en la base después de que la otra corrida lo guardó
+        when(contratoRepository.saveAndFlush(any(Contrato.class))).thenThrow(new DataIntegrityViolationException(
+                "could not execute statement [insert into ajustes ...]; constraint [uk_ajuste_contrato_fecha_hasta]"));
+
+        ResumenAjustePeriodicoResponse resumen = ajusteProgramado.ejecutarAjustePeriodico();
+
+        assertEquals(0, resumen.getAjustesAplicados());
+        assertTrue(resumen.getPendientes().isEmpty(), resumen.getPendientes().toString());
+    }
+
+    @Test
+    @DisplayName("Conflicto de versión sin que el ajuste haya quedado aplicado: pendiente con un motivo sin detalle técnico")
+    void conflictoDeVersionSinAjusteAplicadoQuedaPendiente() {
+        // Cada lectura trae el contrato como está en la base: sin el ajuste (la escritura se revirtió)
+        when(contratoRepository.findByEstado(EstadoContratoEnum.ACTIVO)).thenReturn(List.of(
+                ContratoServiceTest.contratoActivo(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2028, 7, 1), 3)));
+        when(contratoRepository.findById(1L)).thenAnswer(inv -> Optional.of(
+                ContratoServiceTest.contratoActivo(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2028, 7, 1), 3)));
+        when(contratoRepository.saveAndFlush(any(Contrato.class)))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Contrato.class, 1L));
+
+        ResumenAjustePeriodicoResponse resumen = ajusteProgramado.ejecutarAjustePeriodico();
+
+        assertEquals(1, resumen.getPendientes().size());
+        assertEquals("Ajuste N° 1 (2026-07-01 a 2026-10-01): " + AjusteProgramadoService.MOTIVO_CONCURRENTE,
+                resumen.getPendientes().get(0).getMotivo());
     }
 
     private void mockearActivos(Contrato... contratos) {

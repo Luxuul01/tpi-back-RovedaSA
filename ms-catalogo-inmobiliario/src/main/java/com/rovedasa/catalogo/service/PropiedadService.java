@@ -5,6 +5,7 @@ import com.rovedasa.catalogo.client.georef.GeoRefClient;
 import com.rovedasa.catalogo.dto.CrearPropiedadRequest;
 import com.rovedasa.catalogo.dto.ModificarPropiedadRequest;
 import com.rovedasa.catalogo.dto.PropiedadResponse;
+import com.rovedasa.catalogo.exception.ConflictoException;
 import com.rovedasa.catalogo.exception.EstadoPropiedadInesperadoException;
 import com.rovedasa.catalogo.mapper.PropiedadMapper;
 import com.rovedasa.catalogo.model.Persona;
@@ -193,8 +194,9 @@ public class PropiedadService {
 
     /**
      * Cambio de estado pedido por ms-contratos (seña, activación, cancelación, rescisión).
-     * Orden de las validaciones: existe (404), está en el estado esperado si se indicó (409), la transición
-     * es válida según TransicionesEstadoPropiedad (400). Después la entidad aplica sus propias guardas
+     * Orden de las validaciones: existe (404), está en el estado esperado si se indicó (409), no está tomada por
+     * otro contrato si se indicó inquilinoId (409), la transición es válida según TransicionesEstadoPropiedad (400).
+     * Después la entidad aplica sus propias guardas
      * (ej. alquilar exige inquilino) y acá se resuelven las personas y sus roles.
      * Dos cambios concurrentes sobre la misma propiedad los frena el @Version de Propiedad al hacer commit (409).
      */
@@ -207,6 +209,7 @@ public class PropiedadService {
         if (solicitud.getEstadoEsperado() != null && solicitud.getEstadoEsperado() != estadoAnterior) {
             throw new EstadoPropiedadInesperadoException(estadoAnterior, solicitud.getEstadoEsperado());
         }
+        validarMismoContrato(propiedad, solicitud.getInquilinoId());
         if (!TransicionesEstadoPropiedad.puedeTransicionar(estadoAnterior, estadoNuevo)) {
             throw new OperacionInvalidaException(String.format(
                     "No se puede pasar de %s a %s", estadoAnterior, estadoNuevo));
@@ -229,7 +232,7 @@ public class PropiedadService {
      * Compensación de la Saga de ms-contratos (contrato 2): deshace la transición estadoAnterior -> estadoActual
      * cuando ms-contratos no pudo guardar su parte después de que el catálogo confirmó el cambio.
      * Orden de las validaciones: el par es el inverso de una transición válida de RN-05 (400), existe (404),
-     * está en estadoActual (409). Pasa por el mismo @Version que el PATCH de estado: si otro proceso la
+     * está en estadoActual (409), no está tomada por otro contrato si se indicó inquilinoId (409). Pasa por el mismo @Version que el PATCH de estado: si otro proceso la
      * cambió mientras tanto, el commit falla con 409.
      *
      * Pares posibles: RESERVADA -> DISPONIBLE (deshace la seña), ALQUILADA -> RESERVADA (deshace la activación),
@@ -250,6 +253,8 @@ public class PropiedadService {
         if (propiedad.getEstado() != estadoActual) {
             throw new EstadoPropiedadInesperadoException(propiedad.getEstado(), estadoActual);
         }
+        // Sin esto, deshacer una seña (RESERVADA -> DISPONIBLE) liberaba también la reserva de otro contrato
+        validarMismoContrato(propiedad, solicitud.getInquilinoId());
 
         switch (estadoActual) {
             case RESERVADA -> propiedad.liberar();
@@ -267,6 +272,24 @@ public class PropiedadService {
         log.warn("Compensación: la propiedad ID {} ({}) volvió de {} a {}", id, propiedad.getCodigo(),
                 estadoActual, propiedad.getEstado());
         return PropiedadMapper.aPropiedadDTO(propiedad);
+    }
+
+    /**
+     * Contrato entre ms-contratos y el catálogo (Saga): si quien llama indica su inquilinoId y la propiedad está
+     * RESERVADA o ALQUILADA con otro inquilino, la tomó otro contrato y no se toca (409). Sin inquilinoId, o sin
+     * inquilino asignado en la propiedad, no hay nada que comparar y se sigue como antes.
+     */
+    private static void validarMismoContrato(Propiedad propiedad, Long inquilinoId) {
+        boolean tomada = propiedad.getEstado() == EstadoPropiedadEnum.RESERVADA
+                || propiedad.getEstado() == EstadoPropiedadEnum.ALQUILADA;
+        if (inquilinoId == null || !tomada || propiedad.getInquilino() == null) {
+            return;
+        }
+        if (!Objects.equals(propiedad.getInquilino().getId(), inquilinoId)) {
+            log.warn("La propiedad {} está {} con el inquilino ID {} y el pedido trae el inquilino ID {}",
+                    propiedad.getCodigo(), propiedad.getEstado(), propiedad.getInquilino().getId(), inquilinoId);
+            throw new ConflictoException("La propiedad está tomada por otro contrato");
+        }
     }
 
     private void restaurarAlquiler(Propiedad propiedad, Long inquilinoId, Long garanteId) {

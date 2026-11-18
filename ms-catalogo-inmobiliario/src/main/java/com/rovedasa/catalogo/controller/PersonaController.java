@@ -83,21 +83,28 @@ public class PersonaController {
 
     @Operation(summary = "Agregar un rol de negocio a una persona (idempotente)",
             description = "PROPIETARIO e INQUILINO solo se pueden agregar a una persona vinculada a un usuario de "
-                    + "Keycloak (RN-17).")
+                    + "Keycloak (RN-17). Si la persona no lo está (por ejemplo un GARANTE dado de alta sin usuario), "
+                    + "indicá en el body keycloakUserId con el UUID de su usuario en Keycloak: se guarda en minúscula "
+                    + "y no puede estar vinculado a otra persona. En cualquier otro caso keycloakUserId es opcional "
+                    + "y se ignora. Ejemplo: {\"rol\": \"INQUILINO\", \"keycloakUserId\": "
+                    + "\"00001111-2222-3333-4444-555566667777\"}")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Persona con sus roles actualizados"),
             @ApiResponse(responseCode = "400", description = "Rol inválido, o PROPIETARIO/INQUILINO para una persona "
-                    + "sin keycloakUserId", content = @Content(schema = @Schema(implementation = ApiError.class))),
+                    + "sin keycloakUserId y sin keycloakUserId en el body (o con uno que no es un UUID)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "401", description = "Sin token o con un token inválido",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "403", description = "El rol no es ADMINISTRADOR",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "404", description = "No existe la persona",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "El keycloakUserId del body ya está vinculado a otra persona",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @PatchMapping("/{id}/roles")
     public PersonaResponse agregarRol(@PathVariable("id") Long id, @Valid @RequestBody AgregarRolRequest solicitud) {
-        return personaService.agregarRol(id, solicitud.rol());
+        return personaService.agregarRol(id, solicitud.rol(), solicitud.keycloakUserId());
     }
 
     // F-08. Solo ADMINISTRADOR (regla por URL de POST y @PreAuthorize de la clase). Lo usa también

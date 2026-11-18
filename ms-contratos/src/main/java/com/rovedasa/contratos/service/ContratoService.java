@@ -29,6 +29,8 @@ import com.rovedasa.contratos.state.EstadoContratoFactory;
 import com.rovedasa.contratos.state.PeriodoAjuste;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,6 +101,16 @@ public class ContratoService {
         log.info("Creando borrador de contrato para propiedadId={}, propietario={}, inquilino={}",
                 request.getPropiedadId(), request.getPropietarioId(), request.getInquilinoId());
 
+        // Rango admitido de fechas (constantes en CrearContratoRequest): una fecha absurda no llega a la base
+        if (request.getFechaInicio() != null
+                && request.getFechaInicio().isBefore(CrearContratoRequest.FECHA_INICIO_MINIMA)) {
+            throw new OperacionInvalidaException(String.format(
+                    "La fecha de inicio no puede ser anterior al %s", CrearContratoRequest.FECHA_INICIO_MINIMA));
+        }
+        if (request.getFechaFin() != null && request.getFechaFin().isAfter(CrearContratoRequest.FECHA_FIN_MAXIMA)) {
+            throw new OperacionInvalidaException(String.format(
+                    "La fecha de fin no puede ser posterior al %s", CrearContratoRequest.FECHA_FIN_MAXIMA));
+        }
         if (request.getFechaInicio() != null && request.getFechaFin() != null
                 && !request.getFechaFin().isAfter(request.getFechaInicio())) {
             throw new OperacionInvalidaException("La fecha de fin debe ser posterior a la fecha de inicio");
@@ -383,6 +395,12 @@ public class ContratoService {
                 .stream().map(Contrato::getId).toList());
     }
 
+    /** Si el contrato ya tiene registrado el ajuste del período que termina en {@code hasta}. */
+    public boolean ajusteYaAplicado(Long contratoId, LocalDate hasta) {
+        return Boolean.TRUE.equals(transaccionLectura.execute(estado -> buscarContrato(contratoId).getAjustes()
+                .stream().anyMatch(ajuste -> hasta.equals(ajuste.getFechaIndiceHasta()))));
+    }
+
     /** Próximo ajuste que ya corresponde aplicar al contrato, si hay alguno (lo decide el State). */
     public Optional<PeriodoAjuste> buscarAjustePendiente(Long contratoId) {
         LocalDate hoy = LocalDate.now(clock);
@@ -483,7 +501,8 @@ public class ContratoService {
             return guardar(() -> contratoRepository.saveAndFlush(contrato));
         }
 
-        cambiarEstadoPropiedad(contrato, operacion, EstadoPropiedadEnum.DISPONIBLE, estadoOcupado, null, null);
+        cambiarEstadoPropiedad(contrato, operacion, EstadoPropiedadEnum.DISPONIBLE, estadoOcupado,
+                contrato.getInquilinoId(), contrato.getGaranteId());
 
         return guardarOCompensar(contrato, operacion, EstadoPropiedadEnum.DISPONIBLE, estadoOcupado,
                 () -> contratoRepository.saveAndFlush(contrato));
@@ -513,6 +532,14 @@ public class ContratoService {
         }
     }
 
+    /**
+     * Conflictos esperables entre operaciones concurrentes: el @Version (contrato o cuota) o una restricción de
+     * unicidad (dos corridas del mismo ajuste). commons los responde con 409.
+     */
+    static boolean esConflictoDeConcurrencia(RuntimeException e) {
+        return e instanceof OptimisticLockingFailureException || e instanceof DataIntegrityViolationException;
+    }
+
     /** Rechazos del catálogo en los que se sabe que la propiedad no cambió (ver CatalogoClient.traducirError). */
     private static boolean esRechazoClaroDelCatalogo(RuntimeException e) {
         return e instanceof OperacionInvalidaException
@@ -535,9 +562,16 @@ public class ContratoService {
         try {
             return guardar(guardado);
         } catch (RuntimeException e) {
-            log.error("Fallo el guardado local al {} el contrato {} después de pasar la propiedad {} a {}. "
-                            + "Compensando a {}.", operacion, contrato.getNroContrato(), contrato.getPropiedadId(),
-                    estadoActual, estadoAnterior, e);
+            if (esConflictoDeConcurrencia(e)) {
+                // Esperable: otra operación cambió el contrato mientras tanto (sale 409); sin stacktrace
+                log.warn("Fallo el guardado local al {} el contrato {} después de pasar la propiedad {} a {} por un "
+                                + "cambio concurrente ({}). Compensando a {}.", operacion, contrato.getNroContrato(),
+                        contrato.getPropiedadId(), estadoActual, e.getClass().getSimpleName(), estadoAnterior);
+            } else {
+                log.error("Fallo el guardado local al {} el contrato {} después de pasar la propiedad {} a {}. "
+                                + "Compensando a {}.", operacion, contrato.getNroContrato(), contrato.getPropiedadId(),
+                        estadoActual, estadoAnterior, e);
+            }
             compensarEstadoPropiedad(contrato, operacion, estadoActual, estadoAnterior, false);
             throw e;
         }
@@ -551,12 +585,11 @@ public class ContratoService {
      */
     private void compensarEstadoPropiedad(Contrato contrato, String operacion, EstadoPropiedadEnum estadoActual,
                                           EstadoPropiedadEnum estadoAnterior, boolean dudoso) {
-        // Volver de DISPONIBLE (a ALQUILADA o RESERVADA) exige reponer el inquilino y el garante en el catálogo
-        boolean reponerPartes = estadoActual == EstadoPropiedadEnum.DISPONIBLE;
+        // Siempre con las partes: volver de DISPONIBLE exige reponerlas y, en las demás, el catálogo verifica
+        // que la propiedad siga tomada por este inquilino
         try {
             catalogoClient.compensarEstadoPropiedad(contrato.getPropiedadId(), estadoActual, estadoAnterior,
-                    reponerPartes ? contrato.getInquilinoId() : null,
-                    reponerPartes ? contrato.getGaranteId() : null);
+                    contrato.getInquilinoId(), contrato.getGaranteId());
             log.info("Compensación aplicada: propiedad {} devuelta de {} a {} (contrato {})",
                     contrato.getPropiedadId(), estadoActual, estadoAnterior, contrato.getNroContrato());
         } catch (CatalogoConflictoException ex) {

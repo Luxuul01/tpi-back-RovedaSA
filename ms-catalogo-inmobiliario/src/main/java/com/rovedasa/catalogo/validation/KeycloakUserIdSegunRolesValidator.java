@@ -11,6 +11,8 @@ public class KeycloakUserIdSegunRolesValidator
         implements ConstraintValidator<KeycloakUserIdSegunRoles, CrearPersonaRequest> {
 
     private static final String CAMPO = "keycloakUserId";
+    public static final String MENSAJE_NO_ES_UUID = "El keycloakUserId tiene que ser el UUID del usuario en Keycloak "
+            + "(formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)";
     // Keycloak identifica a los usuarios con un UUID (el claim sub del token)
     private static final Pattern UUID = Pattern.compile(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
@@ -24,8 +26,7 @@ public class KeycloakUserIdSegunRolesValidator
         boolean informado = keycloakUserId != null && !keycloakUserId.isBlank();
 
         if (informado && !esUuid(keycloakUserId.trim())) {
-            return rechazar(contexto, "El keycloakUserId tiene que ser el UUID del usuario en Keycloak "
-                    + "(formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)");
+            return rechazar(contexto, MENSAJE_NO_ES_UUID);
         }
         // Roles nulos o vacíos los rechaza @NotEmpty; un rol nulo, @NotNull
         if (!informado && solicitud.roles() != null && solicitud.roles().stream()
@@ -37,7 +38,8 @@ public class KeycloakUserIdSegunRolesValidator
         return true;
     }
 
-    private static boolean esUuid(String valor) {
+    // Acepta mayúsculas: PersonaService lo pasa a minúscula antes de guardarlo (el sub de Keycloak viene así)
+    public static boolean esUuid(String valor) {
         return valor != null && UUID.matcher(valor).matches();
     }
 
