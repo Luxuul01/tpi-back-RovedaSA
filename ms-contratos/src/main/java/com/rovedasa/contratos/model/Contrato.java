@@ -133,7 +133,8 @@ public class Contrato {
     private LocalDateTime fechaModificacion;
 
     @OneToMany(mappedBy = "contrato", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("fechaAplicacion ASC")
+    // Por período: varios ajustes pueden aplicarse el mismo día cuando el proceso programado pone al día un contrato
+    @OrderBy("fechaIndiceHasta ASC")
     @Builder.Default
     private List<Ajuste> ajustes = new ArrayList<>();
 

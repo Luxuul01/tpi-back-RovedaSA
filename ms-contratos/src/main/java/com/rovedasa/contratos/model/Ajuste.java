@@ -53,19 +53,34 @@ public class Ajuste {
     @Column(name = "fecha_aplicacion", nullable = false)
     private LocalDate fechaAplicacion;
 
+    /** Inicio de la ventana del ajuste: H_{k-1} (fechaInicio + (k-1) · frecuencia meses). */
     @Column(name = "fecha_indice_desde", nullable = false)
     private LocalDate fechaIndiceDesde;
 
+    /** Fin de la ventana del ajuste: H_k. Único por contrato: un solo ajuste por período (RN-11). */
     @Column(name = "fecha_indice_hasta", nullable = false)
     private LocalDate fechaIndiceHasta;
 
-    @Column(name = "valor_indice_desde", nullable = false, precision = 19, scale = 6)
+    /**
+     * Fecha del valor del índice que se usó para "desde": puede ser anterior a fechaIndiceDesde si ese día no
+     * hubo publicación (ICL: último publicado anterior). En IPC, el primer mes encadenado.
+     */
+    @Column(name = "fecha_valor_indice_desde")
+    private LocalDate fechaValorIndiceDesde;
+
+    /** Igual que fechaValorIndiceDesde, para "hasta". En IPC, el último mes encadenado. */
+    @Column(name = "fecha_valor_indice_hasta")
+    private LocalDate fechaValorIndiceHasta;
+
+    // Escala 8: en IPC el "índice" encadenado es el propio coeficiente (base 1)
+    @Column(name = "valor_indice_desde", nullable = false, precision = 19, scale = 8)
     private BigDecimal valorIndiceDesde;
 
-    @Column(name = "valor_indice_hasta", nullable = false, precision = 19, scale = 6)
+    @Column(name = "valor_indice_hasta", nullable = false, precision = 19, scale = 8)
     private BigDecimal valorIndiceHasta;
 
-    @Column(name = "coeficiente", nullable = false, precision = 19, scale = 6)
+    // Misma escala con la que CalculadoraAjuste calcula el coeficiente (8 decimales)
+    @Column(name = "coeficiente", nullable = false, precision = 19, scale = 8)
     private BigDecimal coeficiente;
 
     @Column(name = "monto_anterior", nullable = false, precision = 15, scale = 2)

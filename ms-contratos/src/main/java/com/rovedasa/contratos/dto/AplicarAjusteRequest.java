@@ -1,7 +1,5 @@
 package com.rovedasa.contratos.dto;
 
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PastOrPresent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +9,10 @@ import java.time.LocalDate;
 
 /**
  * DTO de entrada para aplicar un ajuste por el índice del contrato, ICL o IPC (POST /api/contratos/{id}/ajustes).
+ * Las fechas son opcionales: el período lo fija el contrato (ajuste k: desde H_{k-1} hasta H_k, con
+ * H_k = fechaInicio + k · frecuencia meses). Si se envían, tienen que coincidir con ese período (si no, 400).
+ * No llevan @PastOrPresent: un "hasta" futuro lo rechaza el State con el mensaje de la regla (todavía no
+ * corresponde, a partir de qué fecha) en lugar de un error genérico de validación del campo.
  */
 @Data
 @Builder
@@ -18,11 +20,7 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class AplicarAjusteRequest {
 
-    @NotNull(message = "La fecha índice desde es obligatoria")
-    @PastOrPresent(message = "La fecha índice desde no puede ser futura")
     private LocalDate fechaIndiceDesde;
 
-    @NotNull(message = "La fecha índice hasta es obligatoria")
-    @PastOrPresent(message = "La fecha índice hasta no puede ser futura")
     private LocalDate fechaIndiceHasta;
 }

@@ -1,6 +1,9 @@
+# Perfil docker: nombres de servicio de la red interna del docker compose. Los secretos no tienen valor por
+# defecto: si el compose no los pasa, el servicio no arranca (en lugar de arrancar con una contraseña de demo).
 spring:
   datasource:
     url: jdbc:postgresql://db-contratos:5432/contratos_db
+    password: ${CONTRATOS_DB_PASSWORD}
   security:
     oauth2:
       resourceserver:
@@ -10,3 +13,8 @@ spring:
 catalogo:
   service:
     base-url: http://ms-catalogo-inmobiliario:8081/api
+
+keycloak:
+  cuenta-servicio:
+    token-uri: http://keycloak:8080/realms/rovedasa-realm/protocol/openid-connect/token
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}

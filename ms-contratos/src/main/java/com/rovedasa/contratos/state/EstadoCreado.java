@@ -42,7 +42,7 @@ public class EstadoCreado implements EstadoContrato {
     @Override
     public void cancelar(Contrato contrato, String motivo, boolean retenerSenia) {
         if (motivo == null || motivo.isBlank()) {
-            throw new OperacionInvalidaException("Debe indicar un motivo para cancelar el borrador del contrato");
+            throw new OperacionInvalidaException("Indicá un motivo para cancelar el borrador del contrato");
         }
 
         contrato.setMotivoCancelacion(motivo.trim());

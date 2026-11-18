@@ -1,6 +1,8 @@
 package com.rovedasa.contratos.dto;
 
 import com.rovedasa.contratos.model.TipoIndiceEnum;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -17,6 +19,8 @@ import java.time.LocalDate;
 
 /**
  * DTO de entrada para crear un borrador de contrato (POST /api/contratos).
+ * Los límites de los montos siguen las columnas de la tabla contratos:
+ * monto_inicial NUMERIC(15,2) y porcentaje_mora_diaria NUMERIC(7,4).
  */
 @Data
 @Builder
@@ -55,10 +59,15 @@ public class CrearContratoRequest {
 
     @NotNull(message = "El monto inicial es obligatorio")
     @Positive(message = "El monto inicial debe ser mayor a cero")
+    @Digits(integer = 13, fraction = 2,
+            message = "El monto inicial admite como máximo 13 dígitos enteros y 2 decimales")
     private BigDecimal montoInicial;
 
     @NotNull(message = "El porcentaje de mora diaria es obligatorio")
     @PositiveOrZero(message = "El porcentaje de mora diaria no puede ser negativo")
+    @DecimalMax(value = "100", message = "El porcentaje de mora diaria no puede superar el 100 %")
+    @Digits(integer = 3, fraction = 4,
+            message = "El porcentaje de mora diaria admite como máximo 3 dígitos enteros y 4 decimales")
     private BigDecimal porcentajeMoraDiaria;
 
     @NotNull(message = "El día de vencimiento mensual es obligatorio")

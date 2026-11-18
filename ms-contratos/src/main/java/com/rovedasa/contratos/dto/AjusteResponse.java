@@ -23,6 +23,9 @@ public class AjusteResponse {
     private LocalDate fechaAplicacion;
     private LocalDate fechaIndiceDesde;
     private LocalDate fechaIndiceHasta;
+    /** Fechas de los valores publicados que se usaron (pueden ser anteriores a las de la ventana). */
+    private LocalDate fechaValorIndiceDesde;
+    private LocalDate fechaValorIndiceHasta;
     private BigDecimal valorIndiceDesde;
     private BigDecimal valorIndiceHasta;
     private BigDecimal coeficiente;
