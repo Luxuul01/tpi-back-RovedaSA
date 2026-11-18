@@ -1,23 +1,29 @@
 package com.rovedasa.contratos.service;
 
 import com.rovedasa.contratos.client.bcra.dto.BcraValorDTO;
-import com.rovedasa.contratos.model.IndiceCache;
 import com.rovedasa.contratos.model.TipoIndiceEnum;
 import com.rovedasa.contratos.repository.IndiceCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 
 /**
- * Lectura y escritura de la tabla indices_cache (caché local de contingencia).
- * Está separado de IndiceService para que la transacción de base de datos no
- * quede abierta mientras se espera la respuesta HTTP del BCRA.
+ * Lectura y escritura de la tabla indices_cache (caché local de contingencia, RN-12).
+ *
+ * guardar() corre en una transacción propia (REQUIRES_NEW): si a IndiceService lo llaman desde
+ * la transacción de un ajuste, lo cacheado queda guardado aunque el ajuste después se rechace, y
+ * una falla al guardar no marca la transacción del ajuste como rollback-only. El guardado es
+ * idempotente (UPDATE y, si no existía, INSERT ... ON CONFLICT DO NOTHING): dos ajustes que piden la
+ * misma fecha al mismo tiempo no chocan por la clave única (tipo_indice, fecha).
  */
 @Slf4j
 @Service
@@ -25,25 +31,32 @@ import java.util.List;
 public class IndiceCacheService {
 
     private final IndiceCacheRepository repository;
+    private final Clock clock;
 
     /** Guarda (o actualiza si ya existía) cada valor recibido del BCRA. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void guardar(TipoIndiceEnum tipo, List<BcraValorDTO> valores) {
-        LocalDateTime ahora = LocalDateTime.now();
-        for (BcraValorDTO v : valores) {
-            IndiceCache registro = repository.findByTipoIndiceAndFecha(tipo, v.getFecha())
-                    .orElseGet(() -> IndiceCache.builder().tipoIndice(tipo).fecha(v.getFecha()).build());
-            registro.setValor(v.getValor());
-            registro.setFechaConsulta(ahora);
-            repository.save(registro);
+        LocalDateTime ahora = LocalDateTime.now(clock);
+        // Siempre en el mismo orden, para que dos transacciones concurrentes no se bloqueen en cruz
+        List<BcraValorDTO> ordenados = valores.stream()
+                .sorted(Comparator.comparing(BcraValorDTO::getFecha))
+                .toList();
+        for (BcraValorDTO v : ordenados) {
+            int actualizados = repository.actualizarValor(tipo, v.getFecha(), v.getValor(), ahora);
+            if (actualizados == 0) {
+                repository.insertarSiNoExiste(tipo.name(), v.getFecha(), v.getValor(), ahora);
+            }
         }
         log.debug("Caché de índices actualizado: {} valores de {}", valores.size(), tipo);
     }
 
-    /** Último valor guardado en o antes de la fecha, sin límite hacia atrás (0 o 1 elemento). */
+    /**
+     * Último valor guardado entre 'minimo' y 'hasta' (0 o 1 elemento). 'minimo' es el límite de
+     * antigüedad: un valor anterior no sirve para la contingencia.
+     */
     @Transactional(readOnly = true)
-    public List<BcraValorDTO> buscarUltimoHasta(TipoIndiceEnum tipo, LocalDate hasta) {
-        return repository.buscarHasta(tipo, hasta, PageRequest.of(0, 1)).stream()
+    public List<BcraValorDTO> buscarUltimoEntre(TipoIndiceEnum tipo, LocalDate minimo, LocalDate hasta) {
+        return repository.buscarUltimoEntre(tipo, minimo, hasta, PageRequest.of(0, 1)).stream()
                 .map(i -> new BcraValorDTO(i.getFecha(), i.getValor()))
                 .toList();
     }

@@ -40,12 +40,15 @@ public class IndiceController {
 
     @Operation(summary = "Valor de un índice en una fecha",
             description = "ICL: valor diario. IPC: inflación mensual (%) del último mes publicado. "
-                    + "Si el BCRA no responde se usa el caché local (origen = CACHE_CONTINGENCIA).")
+                    + "Si no hay valor para la fecha exacta se toma el último publicado anterior. Si el BCRA no "
+                    + "responde se usa el caché local (origen = CACHE_CONTINGENCIA), solo con un valor de hasta "
+                    + "7 días antes (ICL) o de los 2 meses anteriores (IPC).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Valor encontrado"),
-            @ApiResponse(responseCode = "400", description = "Tipo de índice o fecha inválidos",
+            @ApiResponse(responseCode = "400", description = "Tipo de índice o fecha inválidos, fecha futura "
+                    + "o anterior al inicio de la serie",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "503", description = "BCRA caído y sin valor en caché",
+            @ApiResponse(responseCode = "503", description = "BCRA caído o con error y sin valor aceptable en caché",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @GetMapping("/{tipo}/valor")
@@ -57,12 +60,14 @@ public class IndiceController {
 
     @Operation(summary = "Coeficiente de ajuste entre dos fechas",
             description = "ICL: ICL(hasta) / ICL(desde). IPC: producto de (1 + inflación mensual / 100) "
-                    + "de los últimos N meses publicados, con N = meses entre las fechas.")
+                    + "de los meses cuyo primer día está entre desde − 1 mes (incluido) y hasta − 1 mes "
+                    + "(excluido); p. ej. 01/07 → 01/10 usa junio, julio y agosto.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Coeficiente calculado"),
             @ApiResponse(responseCode = "400", description = "Fechas inválidas",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "503", description = "Índice no disponible",
+            @ApiResponse(responseCode = "503", description = "Índice no disponible (BCRA caído sin caché, "
+                    + "o IPC de algún mes todavía no publicado)",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @GetMapping("/{tipo}/coeficiente")

@@ -4,6 +4,7 @@ import com.rovedasa.catalogo.client.bcra.dto.BcraChequesResponseDTO;
 import com.rovedasa.catalogo.client.bcra.dto.BcraChequesResultadoDTO;
 import com.rovedasa.catalogo.client.bcra.dto.BcraDeudasResponseDTO;
 import com.rovedasa.catalogo.client.bcra.dto.BcraDeudorDTO;
+import com.rovedasa.catalogo.validation.ValidadorCuit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Cliente HTTP de la API "Central de Deudores v1.0" del BCRA.
@@ -34,13 +36,16 @@ import java.util.Optional;
 @Component
 public class BcraCentralDeudoresClient {
 
+    /** CUIT al final de la ruta (/Deudas/{cuit}): se loguea enmascarado como en el resto del catálogo. */
+    private static final Pattern CUIT_EN_RUTA = Pattern.compile("\\d{11}$");
+
     private final RestClient restClient;
 
     @Autowired
     public BcraCentralDeudoresClient(RestClient.Builder builder,
                                      @Value("${bcra.api.base-url:https://api.bcra.gob.ar}") String baseUrl,
-                                     @Value("${bcra.api.connect-timeout-ms:3000}") int connectTimeoutMs,
-                                     @Value("${bcra.api.read-timeout-ms:5000}") int readTimeoutMs) {
+                                     @Value("${bcra.api.connect-timeout-ms:2000}") int connectTimeoutMs,
+                                     @Value("${bcra.api.read-timeout-ms:3000}") int readTimeoutMs) {
         this(builder
                 .baseUrl(baseUrl)
                 .requestFactory(crearFabricaConTimeouts(connectTimeoutMs, readTimeoutMs))
@@ -49,7 +54,8 @@ public class BcraCentralDeudoresClient {
                     var response = execution.execute(request, body);
                     // No se loguea el CUIT completo: es un dato personal (Apunte 18: evitar datos sensibles en logs)
                     log.debug("BCRA -> {} {} | <- {} | {} ms", request.getMethod(),
-                            request.getURI().getPath().replaceAll("\\d{7}(\\d{4})$", "*******$1"),
+                            CUIT_EN_RUTA.matcher(request.getURI().getPath())
+                                    .replaceAll(cuit -> ValidadorCuit.enmascarar(cuit.group())),
                             response.getStatusCode(), System.currentTimeMillis() - t0);
                     return response;
                 })
