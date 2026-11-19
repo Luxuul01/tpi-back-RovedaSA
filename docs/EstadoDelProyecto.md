@@ -23,12 +23,12 @@
 | F-07 | Actualizar estado de ocupación | ✅ | `PATCH /api/propiedades/{id}/estado` con `estadoEsperado` opcional (409 si no coincide), más `PATCH /api/propiedades/{id}/estado/compensacion` para la Saga. En los dos, si el body trae un `inquilinoId` distinto del de la propiedad RESERVADA o ALQUILADA, 409 "La propiedad está tomada por otro contrato" |
 | F-08 | Evaluar solvencia del garante | ✅ | `POST /api/personas/{id}/evaluacion-solvencia`, Central de Deudores del BCRA (RN-07) |
 | F-09 | Crear contrato | ✅ | `POST /api/contratos`. Valida montos (`@Digits`) y que la frecuencia de ajuste no supere la duración |
-| F-10 | Señar contrato | ✅ | `POST /api/contratos/{id}/seniar` |
-| F-11 | Activar contrato | ✅ | `POST /api/contratos/{id}/activar`: seña vigente, garante solvente, cancela borradores competidores y genera el tramo 0 de cuotas |
-| F-12 | Cancelar contrato o seña | ✅ | `POST /api/contratos/{id}/cancelar` con motivo y retención de la seña |
-| F-13 | Aplicar ajuste por índice | ✅ | `POST /api/contratos/{id}/ajustes`, `POST /api/contratos/ajuste-periodico` y `@Scheduled`. ICL, y también IPC (agregado) |
-| F-14 | Rescindir contrato | ✅ | `POST /api/contratos/{id}/rescindir`: penalización de 1,5 cánones antes de los 6 meses (`inicio + 6 meses`) o 1 canon después, sobre el canon vigente a la fecha de corte; anula las cuotas posteriores al corte. La fecha va entre el inicio y hoy, y exige no tener ajustes pendientes |
-| F-15 | Finalizar contrato | ✅ | `POST /api/contratos/{id}/finalizar`: desde la fecha de fin, sin ajustes pendientes y sin anular cuotas ya devengadas |
+| F-10 | Señar contrato | ✅ | `POST /api/contratos/{id}/senia` |
+| F-11 | Activar contrato | ✅ | `POST /api/contratos/{id}/activacion`: seña vigente, garante solvente, cancela borradores competidores y genera el tramo 0 de cuotas |
+| F-12 | Cancelar contrato o seña | ✅ | `POST /api/contratos/{id}/cancelacion` con motivo y retención de la seña |
+| F-13 | Aplicar ajuste por índice | ✅ | `POST /api/contratos/{id}/ajustes`, `POST /api/contratos/ajustes-periodicos` y `@Scheduled`. ICL, y también IPC (agregado) |
+| F-14 | Rescindir contrato | ✅ | `POST /api/contratos/{id}/rescision`: penalización de 1,5 cánones antes de los 6 meses (`inicio + 6 meses`) o 1 canon después, sobre el canon vigente a la fecha de corte; anula las cuotas posteriores al corte. La fecha va entre el inicio y hoy, y exige no tener ajustes pendientes |
+| F-15 | Finalizar contrato | ✅ | `POST /api/contratos/{id}/finalizacion`: desde la fecha de fin, sin ajustes pendientes y sin anular cuotas ya devengadas |
 | F-16 | Consultar contratos, ajustes y cuotas | ✅ | `GET /api/contratos`, `/{id}`, `/{id}/ajustes`, `/{id}/cuotas`, `GET /api/cuotas/{id}`. Filtra por rol y responde 404 ante un recurso ajeno |
 | F-17 | Registrar pago de cuota | ✅ | `PATCH /api/cuotas/{id}/pago` (`@Version` evita el doble pago concurrente) |
 
@@ -124,7 +124,7 @@ El Alcance (fuente de verdad entregada) no se modificó. Estas decisiones surgie
 | **RN-14 y RN-15 Ajustes al día** | Sin mención de los ajustes. | Rescindir/finalizar exigen tener los ajustes al día (400 si hay un ajuste pendiente). | Con un ajuste pendiente, las cuotas y la multa quedarían calculadas con un canon que ya debió ajustarse. |
 | **RN-14 Multa de rescisión** | 1,5 o 1 canon vigente según pasen menos de 6 meses o 6 o más desde el inicio. | La multa de rescisión usa el canon vigente a la fecha de corte y el umbral de 6 meses con la misma convención del calendario. | Que la multa no dependa del día en que se procesa la rescisión y cuente los meses igual que las cuotas y los ajustes. |
 | **RN-15 Finalizar** | Sin mención de cuotas. | No anula las cuotas ya devengadas (las de períodos que empezaron antes del fin). | Son deuda real del inquilino. |
-| **§7 Endpoints** | No lista compensación. `/ajuste-periodico` sin respuesta. | Nuevo `PATCH /api/propiedades/{id}/estado/compensacion` (ADMINISTRADOR) y `estadoEsperado` en el PATCH de estado. `/ajuste-periodico` devuelve `{contratosRevisados, ajustesAplicados, pendientes}`. | Saga real con compensación. Hace visible el resultado del proceso masivo. |
+| **§7 Endpoints** | No lista compensación. `/ajustes-periodicos` sin respuesta. | Nuevo `PATCH /api/propiedades/{id}/estado/compensacion` (ADMINISTRADOR) y `estadoEsperado` en el PATCH de estado. `/ajustes-periodicos` devuelve `{contratosRevisados, ajustesAplicados, pendientes}`. | Saga real con compensación. Hace visible el resultado del proceso masivo. |
 | **§8 Persistencia** | `indices_icl_cache` (UK fecha). `@Version` en propiedades y contratos. | `indices_cache` (UK `tipo_indice, fecha`). `@Version` también en `cuotas`. Columnas `cuotas.fecha_emision` y `ajustes.fecha_valor_indice_desde/hasta`. Coeficiente con 8 decimales. | IPC, pagos concurrentes, mora sin retroactividad y auditoría del dato usado. |
 | **§11 Perfil `local`** | Solo para desarrollo del catálogo. | Existe en los tres módulos. Solo cambia el nivel de log y muestra el SQL; la seguridad es la misma. | Comodidad para desarrollar sin abrir la seguridad. |
 

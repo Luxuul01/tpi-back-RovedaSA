@@ -80,7 +80,7 @@ ms-contratos (8082, por el Gateway en `/api/indices/**`; solo lectura, cualquier
 ```
 GET /api/indices/{ICL|IPC}/valor?fecha=2026-10-26
 GET /api/indices/{ICL|IPC}/coeficiente?desde=2026-07-27&hasta=2026-10-27
-GET /api/indices/{ICL|IPC}/simular-ajuste?canonAnterior=500000&desde=2026-07-27&hasta=2026-10-27
+GET /api/indices/{ICL|IPC}/simulacion-ajuste?canonAnterior=500000&desde=2026-07-27&hasta=2026-10-27
 ```
 
 ms-catalogo (8081, por el Gateway en `/api/personas/**`; solo ADMINISTRADOR):
@@ -157,7 +157,7 @@ sequenceDiagram
     participant CS as IndiceCacheService
     participant DB as db_contratos (indices_cache)
 
-    Admin->>GW: GET /api/indices/ICL/simular-ajuste?canonAnterior&desde&hasta (Bearer JWT)
+    Admin->>GW: GET /api/indices/ICL/simulacion-ajuste?canonAnterior&desde&hasta (Bearer JWT)
     GW->>IC: reenvía con X-Correlation-ID
     IC->>IS: calcularAjuste(ICL, canon, desde, hasta)
     loop fecha desde y fecha hasta
