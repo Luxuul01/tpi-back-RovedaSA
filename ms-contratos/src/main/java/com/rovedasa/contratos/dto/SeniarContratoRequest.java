@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * DTO de entrada para seniar un contrato (POST /api/contratos/{id}/seniar).
+ * DTO de entrada para seniar un contrato (POST /api/contratos/{id}/senia).
  * El monto sigue la columna monto_senia NUMERIC(15,2) de la tabla contratos.
  */
 @Data

@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * Resultado del proceso de ajuste periódico (programado o POST /api/contratos/ajuste-periodico).
+ * Resultado del proceso de ajuste periódico (programado o POST /api/contratos/ajustes-periodicos).
  * Cada contrato ACTIVO se pone al día aplicando en orden todos sus ajustes pendientes; los que no se
  * pudieron aplicar (por ejemplo, índice no publicado o BCRA caído sin caché) quedan en {@code pendientes}.
  */

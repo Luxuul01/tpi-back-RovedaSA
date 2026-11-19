@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDate;
 
 /**
- * DTO de entrada para rescindir un contrato (POST /api/contratos/{id}/rescindir).
+ * DTO de entrada para rescindir un contrato (POST /api/contratos/{id}/rescision).
  */
 @Data
 @Builder

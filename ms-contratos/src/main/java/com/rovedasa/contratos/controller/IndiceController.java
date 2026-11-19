@@ -88,7 +88,7 @@ public class IndiceController {
             @ApiResponse(responseCode = "503", description = "Índice no disponible",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
-    @GetMapping("/{tipo}/simular-ajuste")
+    @GetMapping("/{tipo}/simulacion-ajuste")
     public ResponseEntity<ResultadoAjusteDTO> simularAjuste(
             @PathVariable("tipo") TipoIndiceEnum tipo,
             @RequestParam("canonAnterior") BigDecimal canonAnterior,

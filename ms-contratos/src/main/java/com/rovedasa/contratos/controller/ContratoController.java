@@ -90,41 +90,41 @@ public class ContratoController {
     }
 
     // ------------------------------------------------------------------
-    // Señar (POST /api/contratos/{id}/seniar)
+    // Seña (POST /api/contratos/{id}/senia)
     // ------------------------------------------------------------------
     @Operation(summary = "Registrar seña y reservar propiedad (CREADO -> SENIADO)")
-    @PostMapping("/{id}/seniar")
+    @PostMapping("/{id}/senia")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> seniarContrato(
             @PathVariable("id") Long id,
             @Valid @RequestBody SeniarContratoRequest request,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/seniar - usuario sub={}", id, usuario.sub());
+        log.info("POST /api/contratos/{}/senia - usuario sub={}", id, usuario.sub());
         ContratoResponse response = contratoService.seniarContrato(id, request, usuario.sub());
         return ResponseEntity.ok(response);
     }
 
     // ------------------------------------------------------------------
-    // Activar (POST /api/contratos/{id}/activar)
+    // Activación (POST /api/contratos/{id}/activacion)
     // ------------------------------------------------------------------
     @Operation(summary = "Formalizar contrato: verificar garante, alquilar propiedad, generar cuotas (SENIADO -> ACTIVO)")
-    @PostMapping("/{id}/activar")
+    @PostMapping("/{id}/activacion")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> activarContrato(
             @PathVariable("id") Long id,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/activar - usuario sub={}", id, usuario.sub());
+        log.info("POST /api/contratos/{}/activacion - usuario sub={}", id, usuario.sub());
         ContratoResponse response = contratoService.activarContrato(id, usuario.sub());
         return ResponseEntity.ok(response);
     }
 
     // ------------------------------------------------------------------
-    // Cancelar (POST /api/contratos/{id}/cancelar)
+    // Cancelación (POST /api/contratos/{id}/cancelacion)
     // ------------------------------------------------------------------
     @Operation(summary = "Cancelar borrador o seña (CREADO/SENIADO -> CANCELADO)")
-    @PostMapping("/{id}/cancelar")
+    @PostMapping("/{id}/cancelacion")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> cancelarContrato(
             @PathVariable("id") Long id,
@@ -134,38 +134,38 @@ public class ContratoController {
             @RequestParam(value = "retenerSenia", defaultValue = "false") boolean retenerSenia,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/cancelar - motivo={}, retenerSenia={}", id, motivo, retenerSenia);
+        log.info("POST /api/contratos/{}/cancelacion - motivo={}, retenerSenia={}", id, motivo, retenerSenia);
         ContratoResponse response = contratoService.cancelarContrato(id, motivo, retenerSenia, usuario.sub());
         return ResponseEntity.ok(response);
     }
 
     // ------------------------------------------------------------------
-    // Rescindir (POST /api/contratos/{id}/rescindir)
+    // Rescisión (POST /api/contratos/{id}/rescision)
     // ------------------------------------------------------------------
     @Operation(summary = "Rescindir contrato anticipadamente: multa, anular cuotas futuras, liberar propiedad (ACTIVO -> RESCINDIDO)")
-    @PostMapping("/{id}/rescindir")
+    @PostMapping("/{id}/rescision")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<RescisionResponse> rescindirContrato(
             @PathVariable("id") Long id,
             @Valid @RequestBody RescindirContratoRequest request,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/rescindir - fechaRescision={}", id, request.getFechaRescision());
+        log.info("POST /api/contratos/{}/rescision - fechaRescision={}", id, request.getFechaRescision());
         RescisionResponse response = contratoService.rescindirContrato(id, request, usuario.sub());
         return ResponseEntity.ok(response);
     }
 
     // ------------------------------------------------------------------
-    // Finalizar (POST /api/contratos/{id}/finalizar)
+    // Finalización (POST /api/contratos/{id}/finalizacion)
     // ------------------------------------------------------------------
     @Operation(summary = "Finalizar contrato por cumplimiento de plazo (ACTIVO -> FINALIZADO)")
-    @PostMapping("/{id}/finalizar")
+    @PostMapping("/{id}/finalizacion")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ContratoResponse> finalizarContrato(
             @PathVariable("id") Long id,
             Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/{}/finalizar - usuario sub={}", id, usuario.sub());
+        log.info("POST /api/contratos/{}/finalizacion - usuario sub={}", id, usuario.sub());
         ContratoResponse response = contratoService.finalizarContrato(id, usuario.sub());
         return ResponseEntity.ok(response);
     }
@@ -205,15 +205,15 @@ public class ContratoController {
     }
 
     // ------------------------------------------------------------------
-    // Ajuste periódico masivo (POST /api/contratos/ajuste-periodico)
+    // Ajuste periódico masivo (POST /api/contratos/ajustes-periodicos)
     // ------------------------------------------------------------------
     @Operation(summary = "Ejecutar el ajuste periódico: pone al día todos los ajustes pendientes de los contratos activos",
             description = "Devuelve cuántos contratos se revisaron, cuántos ajustes se aplicaron y cuáles quedaron pendientes y por qué.")
-    @PostMapping("/ajuste-periodico")
+    @PostMapping("/ajustes-periodicos")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<ResumenAjustePeriodicoResponse> ejecutarAjustePeriodico(Authentication authentication) {
         UsuarioToken usuario = UsuarioToken.desde(authentication);
-        log.info("POST /api/contratos/ajuste-periodico - usuario sub={}", usuario.sub());
+        log.info("POST /api/contratos/ajustes-periodicos - usuario sub={}", usuario.sub());
         return ResponseEntity.ok(ajusteProgramadoService.ejecutarAjustePeriodico());
     }
 
