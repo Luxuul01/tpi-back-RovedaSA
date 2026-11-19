@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class CatalogoExceptionHandlerTest {
 
     private final CatalogoExceptionHandler handler = new CatalogoExceptionHandler();
-    private final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/contratos/1/activar");
+    private final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/contratos/1/activacion");
 
     @BeforeEach
     void cargarCorrelationId() {
@@ -41,7 +41,7 @@ class CatalogoExceptionHandlerTest {
         assertEquals(409, respuesta.getStatusCode().value());
         assertEquals(409, respuesta.getBody().getStatus());
         assertEquals("La propiedad está en estado DISPONIBLE y se esperaba RESERVADA", respuesta.getBody().getMessage());
-        assertEquals("/api/contratos/1/activar", respuesta.getBody().getPath());
+        assertEquals("/api/contratos/1/activacion", respuesta.getBody().getPath());
         assertEquals("req-test-catalogo", respuesta.getBody().getCorrelationId());
     }
 

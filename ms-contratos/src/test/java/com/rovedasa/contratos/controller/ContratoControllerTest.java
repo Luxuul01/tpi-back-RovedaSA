@@ -63,7 +63,7 @@ class ContratoControllerTest {
         when(contratoService.activarContrato(eq(1L), anyString()))
                 .thenThrow(new CatalogoConflictoException("La propiedad está en estado DISPONIBLE y se esperaba RESERVADA"));
 
-        mockMvc.perform(post("/api/contratos/1/activar").with(jwt().authorities(ADMIN)))
+        mockMvc.perform(post("/api/contratos/1/activacion").with(jwt().authorities(ADMIN)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.message").value("La propiedad está en estado DISPONIBLE y se esperaba RESERVADA"));
@@ -74,7 +74,7 @@ class ContratoControllerTest {
         when(contratoService.activarContrato(eq(1L), anyString()))
                 .thenThrow(new CatalogoIntegracionException("El catálogo rechazó la credencial del servicio (HTTP 401)"));
 
-        mockMvc.perform(post("/api/contratos/1/activar").with(jwt().authorities(ADMIN)))
+        mockMvc.perform(post("/api/contratos/1/activacion").with(jwt().authorities(ADMIN)))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.status").value(502));
     }
@@ -109,7 +109,7 @@ class ContratoControllerTest {
 
     @Test
     void cancelarConUnMotivoDeMasDe500CaracteresDa400SinLlegarAlServicio() throws Exception {
-        mockMvc.perform(post("/api/contratos/1/cancelar").with(jwt().authorities(ADMIN))
+        mockMvc.perform(post("/api/contratos/1/cancelacion").with(jwt().authorities(ADMIN))
                         .param("motivo", "x".repeat(501)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
@@ -125,7 +125,7 @@ class ContratoControllerTest {
         when(contratoService.cancelarContrato(eq(1L), eq(motivo), eq(false), anyString()))
                 .thenReturn(ContratoResponse.builder().id(1L).build());
 
-        mockMvc.perform(post("/api/contratos/1/cancelar").with(jwt().authorities(ADMIN)).param("motivo", motivo))
+        mockMvc.perform(post("/api/contratos/1/cancelacion").with(jwt().authorities(ADMIN)).param("motivo", motivo))
                 .andExpect(status().isOk());
     }
 
@@ -137,7 +137,7 @@ class ContratoControllerTest {
                         .contratoId(9L).motivo("IPC de octubre todavía no publicado").build()))
                 .build());
 
-        mockMvc.perform(post("/api/contratos/ajuste-periodico").with(jwt().authorities(ADMIN)))
+        mockMvc.perform(post("/api/contratos/ajustes-periodicos").with(jwt().authorities(ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.contratosRevisados").value(3))
                 .andExpect(jsonPath("$.ajustesAplicados").value(2))

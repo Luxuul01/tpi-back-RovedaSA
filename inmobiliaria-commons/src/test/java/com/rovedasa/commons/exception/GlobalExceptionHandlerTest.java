@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
-    private final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/contratos/1/seniar");
+    private final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/contratos/1/senia");
 
     @BeforeEach
     void cargarCorrelationId() {
@@ -301,7 +301,7 @@ class GlobalExceptionHandlerTest {
         assertNotNull(cuerpo);
         assertEquals(esperado.value(), cuerpo.getStatus());
         assertEquals(esperado.getReasonPhrase(), cuerpo.getError());
-        assertEquals("/api/contratos/1/seniar", cuerpo.getPath());
+        assertEquals("/api/contratos/1/senia", cuerpo.getPath());
         assertEquals("req-test-123", cuerpo.getCorrelationId());
         assertNotNull(cuerpo.getTimestamp());
     }
