@@ -46,10 +46,10 @@ class IndiceExceptionHandlerTest {
     void catalogoNoDisponibleDa503() {
         ResponseEntity<ApiError> respuesta = handler.handleCatalogoNoDisponible(
                 new CatalogoNoDisponibleException("Catálogo no disponible"),
-                new MockHttpServletRequest("POST", "/api/contratos/1/activar"));
+                new MockHttpServletRequest("POST", "/api/contratos/1/activacion"));
 
         assertEquals(503, respuesta.getStatusCode().value());
-        assertEquals("/api/contratos/1/activar", respuesta.getBody().getPath());
+        assertEquals("/api/contratos/1/activacion", respuesta.getBody().getPath());
         assertEquals("req-test-503", respuesta.getBody().getCorrelationId());
     }
 }

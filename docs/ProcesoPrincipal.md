@@ -33,7 +33,7 @@ sequenceDiagram
     CT-->>A: 201 Contrato CREADO
 
     Note over A,CA: P4 - Registrar seña [F-10, F-07 / RN-05, RN-06]
-    A->>GW: POST /api/contratos/{id}/seniar
+    A->>GW: POST /api/contratos/{id}/senia
     GW->>CT: Reenvía
     CT->>CA: Consultar propiedad
     alt Propiedad DISPONIBLE
@@ -50,7 +50,7 @@ sequenceDiagram
     end
 
     Note over A,BC: P5 - Activar contrato [F-11, F-08, F-07 / RN-07, RN-08]
-    A->>GW: POST /api/contratos/{id}/activar
+    A->>GW: POST /api/contratos/{id}/activacion
     GW->>CT: Reenvía
     alt Fecha límite de seña vencida
         CT-->>A: Rechazo - corresponde cancelar la seña (P6)
@@ -80,7 +80,7 @@ sequenceDiagram
     end
 
     Note over A,CA: P6 - Excepción: cancelar seña [F-12 / RN-09]
-    A->>GW: POST /api/contratos/{id}/cancelar
+    A->>GW: POST /api/contratos/{id}/cancelacion
     GW->>CT: Reenvía
     CT->>CA: PATCH /api/propiedades/{id}/estado - DISPONIBLE (estadoEsperado RESERVADA)
     CT-->>A: 200 Contrato CANCELADO con motivo y seniaRetenida
@@ -125,5 +125,5 @@ Cada cuota guarda su `fechaEmision` (la fecha en que se generó) y la mora corre
 
 El ajuste número k corresponde en el hito `H_k = fechaInicio + k × frecuencia` meses, si ese hito es anterior a la fecha de fin y ya se aplicaron los anteriores. La ventana del índice es de `H_(k-1)` a `H_k`, sin importar el día en que se ejecute el ajuste, y cada ajuste emite las cuotas de su período (las cuotas `k·f` a `(k+1)·f − 1`). El período se valida antes de consultar el índice; las fechas del pedido son opcionales y, si vienen, tienen que coincidir. El índice se consulta fuera de la transacción. Las cuotas que emite un ajuste aplicado tarde llevan como fecha de emisión el día en que se aplicó (ver "Cuotas emitidas tarde").
 
-El proceso programado (y `POST /api/contratos/ajuste-periodico`) pone al día cada contrato activo aplicando en orden todos sus ajustes pendientes, cada uno en su propia transacción, y devuelve `{contratosRevisados, ajustesAplicados, pendientes: [{contratoId, motivo}]}`. Un contrato cuyo índice no está disponible queda pendiente para la próxima corrida sin frenar a los demás.
+El proceso programado (y `POST /api/contratos/ajustes-periodicos`) pone al día cada contrato activo aplicando en orden todos sus ajustes pendientes, cada uno en su propia transacción, y devuelve `{contratosRevisados, ajustesAplicados, pendientes: [{contratoId, motivo}]}`. Un contrato cuyo índice no está disponible queda pendiente para la próxima corrida sin frenar a los demás.
 

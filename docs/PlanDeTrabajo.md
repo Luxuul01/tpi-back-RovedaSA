@@ -96,10 +96,10 @@
     * Implementar cliente `RestClient` interno para consultar disponibilidad del bien y ordenar la conmutación a `RESERVADA`, `ALQUILADA` o `DISPONIBLE`.
   * Controladores y Endpoints REST:
     * `POST /api/contratos` (Alta de borrador en estado `Creado`).
-    * `POST /api/contratos/{id}/seniar` (Transición a `Señado`).
-    * `POST /api/contratos/{id}/activar` (Transición a `Activo` con verificación de garantías y cancelación de borradores competidores).
-    * `POST /api/contratos/{id}/cancelar` (Cancelación de seña y liberación del bien a `DISPONIBLE`).
-    * `POST /api/contratos/{id}/rescindir` y `/finalizar`.
+    * `POST /api/contratos/{id}/senia` (Transición a `Señado`).
+    * `POST /api/contratos/{id}/activacion` (Transición a `Activo` con verificación de garantías y cancelación de borradores competidores).
+    * `POST /api/contratos/{id}/cancelacion` (Cancelación de seña y liberación del bien a `DISPONIBLE`).
+    * `POST /api/contratos/{id}/rescision` y `/finalizacion`.
     * `GET /api/contratos` (listado único filtrado según el rol: todos para `ADMINISTRADOR`, los de sus propiedades para `PROPIETARIO` y los propios para `INQUILINO`, siempre por el `sub` del token).
     * `GET /api/contratos/{id}` (404 si el recurso es ajeno).
   * Coordinación con el Integrante 5: el Integrante 3 hizo las entidades JPA, el patrón State, la seguridad base y el test de integración; el Integrante 5, la capa de servicio, los endpoints REST, `CatalogoClient`, los DTOs y el `Clock` (PR #15). Ver [Estado del proyecto](./EstadoDelProyecto.md).

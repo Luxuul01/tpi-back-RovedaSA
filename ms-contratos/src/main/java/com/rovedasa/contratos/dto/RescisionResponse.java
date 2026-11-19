@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * DTO de salida para rescindir (POST /api/contratos/{id}/rescindir).
+ * DTO de salida para rescindir (POST /api/contratos/{id}/rescision).
  */
 @Data
 @Builder

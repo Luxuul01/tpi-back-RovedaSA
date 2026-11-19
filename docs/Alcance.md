@@ -221,13 +221,13 @@ Imagen y definición: [Diagramas.md — C4 Contenedores](./Diagramas.md#c4---con
 | Contratos | POST | `/api/contratos` | Registrar un borrador de contrato | ADMINISTRADOR |
 | Contratos | GET | `/api/contratos` | Listar los contratos visibles según el rol: todos (admin), los de sus propiedades (propietario) o los propios (inquilino) | ADMINISTRADOR / PROPIETARIO / INQUILINO (filtra por el token) |
 | Contratos | GET | `/api/contratos/{id}` | Consultar el detalle, el estado y el canon vigente | ADMINISTRADOR / dueño del recurso (404 si es ajeno) |
-| Contratos | POST | `/api/contratos/{id}/seniar` | Registrar la seña y reservar la propiedad | ADMINISTRADOR |
-| Contratos | POST | `/api/contratos/{id}/activar` | Formalizar el contrato: verificar el garante, alquilar la propiedad y generar las cuotas iniciales | ADMINISTRADOR |
-| Contratos | POST | `/api/contratos/{id}/cancelar` | Descartar el borrador o cancelar la seña, liberando la propiedad | ADMINISTRADOR |
-| Contratos | POST | `/api/contratos/{id}/rescindir` | Rescindir anticipadamente: penalización, anulación de cuotas y liberación de la propiedad | ADMINISTRADOR |
-| Contratos | POST | `/api/contratos/{id}/finalizar` | Cerrar un contrato que cumplió su plazo | ADMINISTRADOR |
+| Contratos | POST | `/api/contratos/{id}/senia` | Registrar la seña y reservar la propiedad | ADMINISTRADOR |
+| Contratos | POST | `/api/contratos/{id}/activacion` | Formalizar el contrato: verificar el garante, alquilar la propiedad y generar las cuotas iniciales | ADMINISTRADOR |
+| Contratos | POST | `/api/contratos/{id}/cancelacion` | Descartar el borrador o cancelar la seña, liberando la propiedad | ADMINISTRADOR |
+| Contratos | POST | `/api/contratos/{id}/rescision` | Rescindir anticipadamente: penalización, anulación de cuotas y liberación de la propiedad | ADMINISTRADOR |
+| Contratos | POST | `/api/contratos/{id}/finalizacion` | Cerrar un contrato que cumplió su plazo | ADMINISTRADOR |
 | Ajustes | POST | `/api/contratos/{id}/ajustes` | Aplicar el ajuste por ICL a un contrato puntual | ADMINISTRADOR |
-| Ajustes | POST | `/api/contratos/ajuste-periodico` | Ejecutar manualmente el proceso de ajuste masivo (también corre programado) | ADMINISTRADOR |
+| Ajustes | POST | `/api/contratos/ajustes-periodicos` | Ejecutar manualmente el proceso de ajuste masivo (también corre programado) | ADMINISTRADOR |
 | Ajustes | GET | `/api/contratos/{id}/ajustes` | Consultar el historial de ajustes | ADMINISTRADOR / dueño del recurso |
 | Cuotas | GET | `/api/contratos/{id}/cuotas?fechaReferencia={fecha}` | Consultar las cuotas con mora y total calculados a la fecha de referencia | ADMINISTRADOR / dueño del recurso |
 | Cuotas | GET | `/api/cuotas/{id}?fechaReferencia={fecha}` | Consultar una cuota con su mora | ADMINISTRADOR / dueño del recurso |
@@ -406,11 +406,11 @@ Las reglas que dependen del paso del tiempo (seña vencida, finalización) se cu
 |---|---|---|---|---|
 | C-01 | Admin, propietario y zonas de Córdoba cargadas | POST `/api/propiedades` con una dirección real escrita de forma informal | 201, DISPONIBLE, dirección normalizada, coordenadas, zona y canon = valor m² × factor × superficie. Con una dirección inexistente: 400. | F-04, RN-03, RN-04 |
 | C-02 | Propiedad DISPONIBLE y dos contratos CREADO sobre ella | Señar el 1 y después el 2 | El 1 queda SEÑADO y la propiedad RESERVADA. El 2 se rechaza y sigue CREADO. | F-10, F-07, RN-05, RN-06 |
-| C-03 | Contrato 1 SEÑADO, garante solvente, canon 500.000, frecuencia 3 | POST `/activar` | ACTIVO, propiedad ALQUILADA, contrato 2 CANCELADO y 3 cuotas PENDIENTE de 500.000 | F-11, F-08, RN-07, RN-08 |
+| C-03 | Contrato 1 SEÑADO, garante solvente, canon 500.000, frecuencia 3 | POST `/activacion` | ACTIVO, propiedad ALQUILADA, contrato 2 CANCELADO y 3 cuotas PENDIENTE de 500.000 | F-11, F-08, RN-07, RN-08 |
 | C-04 | Contrato SEÑADO con garante en situación ≥ 3 (perfil demo) | Activar y después cancelar | Activación rechazada (sigue SEÑADO). Luego CANCELADO y propiedad DISPONIBLE. | F-08, F-12, RN-07, RN-09 |
 | C-05 | ACTIVO, canon 500.000, frecuencia 3, inicio hace más de 3 meses, ICL 10,00 → 12,50 | POST `/ajustes`, repetirlo, y repetir con el BCRA caído y el valor en caché | +25 %, canon 625.000 y 3 cuotas nuevas. La repetición se rechaza. Con el BCRA caído, el ajuste se aplica usando el caché. | F-13, RN-11, RN-12 |
 | C-06 | Cuota PENDIENTE de 500.000, mora 0,1 % diario | GET cuotas con fecha de referencia vencimiento + 10 días, después pagar y volver a consultar | Mora 5.000 y total 505.000. Después del pago queda PAGADA y sin mora. | F-16, F-17, RN-13, RN-18 |
-| C-07 | ACTIVO, canon 500.000, 4 meses de antigüedad, cuotas futuras | POST `/rescindir` | RESCINDIDO, penalización 750.000, cuotas futuras ANULADAS y propiedad DISPONIBLE. Una segunda rescisión se rechaza. | F-14, RN-10, RN-14 |
+| C-07 | ACTIVO, canon 500.000, 4 meses de antigüedad, cuotas futuras | POST `/rescision` | RESCINDIDO, penalización 750.000, cuotas futuras ANULADAS y propiedad DISPONIBLE. Una segunda rescisión se rechaza. | F-14, RN-10, RN-14 |
 | C-08 | Dos contratos de inquilinos distintos y tokens de los 3 usuarios | (a) listar con inquilino1 · (b) pedir el contrato ajeno · (c) POST con inquilino1 · (d) GET general con propietario1 · (e) sin token | (a) 200 solo lo suyo · (b) 404 · (c) 403 Gateway · (d) 403 servicio · (e) 401 | F-01, F-05, F-16, RN-16, RN-17 |
 
 **Convenciones que fijan estas comprobaciones:**

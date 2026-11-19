@@ -1005,7 +1005,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -1059,7 +1059,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -1114,7 +1114,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/activacion"
           },
           "event": [
             {
@@ -1629,7 +1629,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoB}}/activacion"
           },
           "event": [
             {
@@ -1750,7 +1750,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/finalizar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/finalizacion"
           },
           "event": [
             {
@@ -1781,7 +1781,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescindir",
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescision",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fechaRescision\": \"2030-01-01\"\n}",
@@ -1822,7 +1822,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescindir",
+            "url": "{{baseUrl}}/api/contratos/{{contratoA}}/rescision",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fechaRescision\": \"{{manana}}\"\n}",
@@ -2109,7 +2109,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -2138,7 +2138,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/activacion"
           },
           "event": [
             {
@@ -2184,7 +2184,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/cancelar?motivo=Garante no solvente&retenerSenia=false"
+            "url": "{{baseUrl}}/api/contratos/{{contratoC}}/cancelacion?motivo=Garante no solvente&retenerSenia=false"
           },
           "event": [
             {
@@ -2384,7 +2384,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -2413,7 +2413,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoD}}/activacion"
           },
           "event": [
             {
@@ -2634,7 +2634,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -2663,7 +2663,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoK}}/activacion"
           },
           "event": [
             {
@@ -2749,7 +2749,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -2778,7 +2778,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoIpc}}/activacion"
           },
           "event": [
             {
@@ -2973,7 +2973,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -3002,7 +3002,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/activacion"
           },
           "event": [
             {
@@ -3027,7 +3027,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescindir",
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescision",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fechaRescision\": \"{{hoy}}\"\n}",
@@ -3104,7 +3104,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescindir",
+            "url": "{{baseUrl}}/api/contratos/{{contratoE}}/rescision",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fechaRescision\": \"{{hoy}}\"\n}",
@@ -3603,7 +3603,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -3652,7 +3652,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activacion"
           },
           "event": [
             {
@@ -3718,7 +3718,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoG}}/activacion"
           },
           "event": [
             {
@@ -3799,7 +3799,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -3828,7 +3828,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoH}}/activacion"
           },
           "event": [
             {
@@ -3888,7 +3888,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -3917,7 +3917,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoI}}/activacion"
           },
           "event": [
             {
@@ -4119,7 +4119,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/seniar",
+            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/senia",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"montoSenia\": 100000,\n  \"fechaLimiteSenia\": \"{{fechaLimiteSenia}}\"\n}",
@@ -4148,7 +4148,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/activar"
+            "url": "{{baseUrl}}/api/contratos/{{contratoJ}}/activacion"
           },
           "event": [
             {
@@ -4164,11 +4164,11 @@
           ]
         },
         {
-          "name": "Ajuste periódico: POST /api/contratos/ajuste-periodico pone al día los contratos ACTIVOS",
+          "name": "Ajuste periódico: POST /api/contratos/ajustes-periodicos pone al día los contratos ACTIVOS",
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/ajuste-periodico"
+            "url": "{{baseUrl}}/api/contratos/ajustes-periodicos"
           },
           "event": [
             {
@@ -4292,7 +4292,7 @@
           "request": {
             "method": "POST",
             "header": [],
-            "url": "{{baseUrl}}/api/contratos/ajuste-periodico"
+            "url": "{{baseUrl}}/api/contratos/ajustes-periodicos"
           },
           "event": [
             {

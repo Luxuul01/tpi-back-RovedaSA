@@ -635,9 +635,9 @@ state CREADO {
     CREADO : **Prohibido:** activar(), aplicarAjuste(), rescindir(), finalizar()
 }
 
-CREADO --> SENIADO : POST /seniar\n[Propiedad DISPONIBLE && montoSenia > 0 && fechaLimite >= hoy]\n/ PATCH Catálogo (RESERVADA) + Saga compensa si falla BD
+CREADO --> SENIADO : POST /senia\n[Propiedad DISPONIBLE && montoSenia > 0 && fechaLimite >= hoy]\n/ PATCH Catálogo (RESERVADA) + Saga compensa si falla BD
 
-CREADO --> CANCELADO : POST /cancelar\n[motivo obligatorio, seniaRetenida=false]
+CREADO --> CANCELADO : POST /cancelacion\n[motivo obligatorio, seniaRetenida=false]
 
 state SENIADO {
     SENIADO : **Bean:** EstadoSeniado
@@ -645,9 +645,9 @@ state SENIADO {
     SENIADO : **Prohibido:** seniar(), aplicarAjuste(), rescindir(), finalizar()
 }
 
-SENIADO --> ACTIVO : POST /activar\n[hoy <= fechaLimiteSenia && POST /evaluacion-solvencia (esSolvente=true)]\n/ PATCH Catálogo (ALQUILADA, estadoEsperado=RESERVADA) + cancelar borradores CREADO\n+ generar cuotas tramo 0 + Saga: /estado/compensacion a RESERVADA si falla BD o el catálogo no responde claro
+SENIADO --> ACTIVO : POST /activacion\n[hoy <= fechaLimiteSenia && POST /evaluacion-solvencia (esSolvente=true)]\n/ PATCH Catálogo (ALQUILADA, estadoEsperado=RESERVADA) + cancelar borradores CREADO\n+ generar cuotas tramo 0 + Saga: /estado/compensacion a RESERVADA si falla BD o el catálogo no responde claro
 
-SENIADO --> CANCELADO : POST /cancelar\n[motivo, retenerSenia]\n/ PATCH Catálogo (DISPONIBLE, estadoEsperado=RESERVADA) + Saga: /estado/compensacion a RESERVADA si falla BD
+SENIADO --> CANCELADO : POST /cancelacion\n[motivo, retenerSenia]\n/ PATCH Catálogo (DISPONIBLE, estadoEsperado=RESERVADA) + Saga: /estado/compensacion a RESERVADA si falla BD
 
 state ACTIVO {
     ACTIVO : **Bean:** EstadoActivo
@@ -657,9 +657,9 @@ state ACTIVO {
     ACTIVO --> ACTIVO : POST /ajustes (o @Scheduled ajuste-periodico)\n[hoy >= H_k = fechaInicio + k·frecuencia && H_k < fechaFin && ajuste k no aplicado]\n/ IndiceService (BCRA o indices_cache ≤ 7 días) ventana H_(k-1)→H_k + guardar Ajuste\n+ generar cuotas del tramo k (el periódico pone al día todos los pendientes)
 }
 
-ACTIVO --> RESCINDIDO : POST /rescindir\n[fechaInicio <= fechaRescision <= min(hoy, fechaFin)]\n/ multa (1.5x si < 6 meses, 1.0x si >= 6)\n+ anular cuotas PENDIENTE que vencen después de fechaRescision\n+ PATCH Catálogo (DISPONIBLE) + Saga: /estado/compensacion a ALQUILADA si falla BD
+ACTIVO --> RESCINDIDO : POST /rescision\n[fechaInicio <= fechaRescision <= min(hoy, fechaFin)]\n/ multa (1.5x si < 6 meses, 1.0x si >= 6)\n+ anular cuotas PENDIENTE que vencen después de fechaRescision\n+ PATCH Catálogo (DISPONIBLE) + Saga: /estado/compensacion a ALQUILADA si falla BD
 
-ACTIVO --> FINALIZADO : POST /finalizar\n[hoy >= fechaFin]\n/ PATCH Catálogo (DISPONIBLE) (las cuotas devengadas no se anulan)\n+ Saga: /estado/compensacion a ALQUILADA si falla BD
+ACTIVO --> FINALIZADO : POST /finalizacion\n[hoy >= fechaFin]\n/ PATCH Catálogo (DISPONIBLE) (las cuotas devengadas no se anulan)\n+ Saga: /estado/compensacion a ALQUILADA si falla BD
 
 state CANCELADO {
     CANCELADO : **Bean:** EstadoCancelado (terminal)

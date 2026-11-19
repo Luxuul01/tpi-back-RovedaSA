@@ -63,7 +63,7 @@ class SecurityConfigTest {
     @Test
     @DisplayName("Rol sin permiso en @PreAuthorize: 403 con ApiError")
     void rolSinPermisoDa403ConApiError() throws Exception {
-        mockMvc.perform(post("/api/contratos/ajuste-periodico").with(conRol("INQUILINO"))
+        mockMvc.perform(post("/api/contratos/ajustes-periodicos").with(conRol("INQUILINO"))
                         .header("X-Correlation-ID", "corr-contratos-403"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403))
