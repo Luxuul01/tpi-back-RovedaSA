@@ -31,6 +31,11 @@ springdoc:
         url: /v3/api-docs/catalogo
       - name: ms-contratos
         url: /v3/api-docs/contratos
+    oauth:
+      client-id: rovedasa-backend
+      use-pkce-with-authorization-code-grant: true
+      additional-query-string-params:
+        prompt: login
 
 logging:
   level:
