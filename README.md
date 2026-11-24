@@ -180,7 +180,7 @@ $token
 ```
 (Sin `jq`, copiá el valor de `access_token` de la respuesta.) El token dura 5 minutos.
 
-**Usarlo en Swagger UI:** abrir `http://localhost:8080/swagger-ui.html`, elegir el servicio arriba a la derecha, botón **Authorize**, pegar el `access_token` (sin la palabra `Bearer`) y **Authorize**. Desde la consola: `curl -H "Authorization: Bearer $token" http://localhost:8080/api/propiedades`.
+**Usarlo en Swagger UI:** abrir `http://localhost:8080/swagger-ui.html`, elegir el servicio arriba a la derecha y tocar **Authorize**. Podés iniciar sesión directo con **OAuth2 (`keycloakOAuth2`, Authorization Code + PKCE)** —viene `client_id: rovedasa-backend` precargado y abre el login web de Keycloak— o pegar el `access_token` manualmente en **`bearerJwt`** (sin la palabra `Bearer`). Desde la consola: `curl -H "Authorization: Bearer $token" http://localhost:8080/api/propiedades`.
 
 Sin token cualquier endpoint de `/api/**` responde 401; con un rol sin permiso, 403 (ambos con `ApiError` y `correlationId`).
 
